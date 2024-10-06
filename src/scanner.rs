@@ -133,9 +133,11 @@ impl<'a> Scanner<'a> {
                 self.source.next();
                 if c == '\n' {
                     self.line += 1;
-                    return true;
+                    break;
                 }
             }
+
+            return true;
         }
 
         return false;
