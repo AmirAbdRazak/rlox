@@ -1,8 +1,7 @@
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-
-use token::Token;
+use std::process::exit;
 
 mod lexer;
 mod scanner;
@@ -26,16 +25,12 @@ fn main() {
             });
 
             if !file_contents.is_empty() {
-                let mut scanner: scanner::Scanner = scanner::Scanner::new(&file_contents);
-                let mut tokens: Vec<Token> = Vec::new();
-                match scanner.scan_tokens() {
-                    Ok(ts) => tokens = ts,
-                    Err(errors) => errors
-                        .iter()
-                        .for_each(|err| report(err.line(), format!("{}", err))),
-                };
+                let mut runtime = Lox::new();
+                runtime.run(file_contents);
 
-                tokens.iter().for_each(|token| println!("{token}"));
+                if runtime.had_error {
+                    exit(65);
+                }
             } else {
                 println!("EOF  null"); // Placeholder, remove this line when implementing the scanner
             }
@@ -47,6 +42,26 @@ fn main() {
     }
 }
 
-pub fn report(line: usize, message: String) {
-    println!("[line {}] Error: {}", line, message);
+pub struct Lox {
+    had_error: bool,
+}
+impl Lox {
+    pub fn new() -> Lox {
+        Lox { had_error: false }
+    }
+
+    pub fn run(&mut self, source: String) {
+        let mut scanner: scanner::Scanner = scanner::Scanner::new(&source);
+        let (tokens, errors) = scanner.scan_tokens();
+
+        errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        tokens.iter().for_each(|token| println!("{token}"));
+    }
+
+    pub fn report(&mut self, line: usize, message: String) {
+        eprintln!("[line {}] Error: {}", line, message);
+        self.had_error = true;
+    }
 }

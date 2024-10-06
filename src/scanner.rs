@@ -40,22 +40,14 @@ pub enum ScannerError {
 impl fmt::Display for ScannerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ScannerError::UnknownCharacter(c, line) => {
-                write!(
-                    f,
-                    "Scanner Error: Unrecognised character {} at line {}",
-                    c, line
-                )?;
+            ScannerError::UnknownCharacter(c, _) => {
+                write!(f, "Unexpected character: {c}")?;
             }
             ScannerError::UnterminatedString(line) => {
-                write!(f, "Scanner Error: Unterminated string at line {}", line)?;
+                write!(f, "Unterminated string at line {}", line)?;
             }
             ScannerError::UnparseableDigit(err_str, line) => {
-                write!(
-                    f,
-                    "Scanner Error: Unparseable digit {} at line {}",
-                    err_str, line
-                )?;
+                write!(f, "Unparseable digit {} at line {}", err_str, line)?;
             }
         }
 
@@ -88,7 +80,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, Vec<ScannerError>> {
+    pub fn scan_tokens(&mut self) -> (Vec<Token>, Vec<ScannerError>) {
         let mut tokens: Vec<Token> = Vec::new();
         let mut errors: Vec<ScannerError> = Vec::new();
 
@@ -111,17 +103,13 @@ impl<'a> Scanner<'a> {
             };
         }
 
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-
-        Ok(tokens)
+        (tokens, errors)
     }
 
     pub fn simple_token(&self, token_type: TokenType) -> Token {
         Token {
             token_type,
-            line: self.line,
+            _line: self.line,
         }
     }
 
