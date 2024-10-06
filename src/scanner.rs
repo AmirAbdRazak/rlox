@@ -40,11 +40,11 @@ pub enum ScannerError {
 impl fmt::Display for ScannerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ScannerError::UnknownCharacter(c, _) => {
+            ScannerError::UnknownCharacter(c, _line) => {
                 write!(f, "Unexpected character: {c}")?;
             }
-            ScannerError::UnterminatedString(line) => {
-                write!(f, "Unterminated string at line {}", line)?;
+            ScannerError::UnterminatedString(_line) => {
+                write!(f, "Unterminated string.")?;
             }
             ScannerError::UnparseableDigit(err_str, line) => {
                 write!(f, "Unparseable digit {} at line {}", err_str, line)?;

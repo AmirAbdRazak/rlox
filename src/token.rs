@@ -79,7 +79,10 @@ impl Token {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {} null", self.token_type_name(), self.token_type)?;
+        match self.token_type {
+            TokenType::LoxString(ref s) => write!(f, "STRING \"{}\" {}", s, s)?,
+            _ => write!(f, "{} {} null", self.token_type_name(), self.token_type)?,
+        };
         Ok(())
     }
 }
