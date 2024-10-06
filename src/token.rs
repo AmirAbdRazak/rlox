@@ -106,7 +106,7 @@ impl fmt::Display for TokenType {
             Equal => "=",
             EqualEqual => "==",
             Greater => ">",
-            GreaterEqual => "=>",
+            GreaterEqual => ">=",
             Less => "<",
             LessEqual => "<=",
 
