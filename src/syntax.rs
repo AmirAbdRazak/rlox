@@ -59,7 +59,7 @@ impl fmt::Display for LiteralValue {
             }
             LiteralValue::None => "nil".to_string(),
             LiteralValue::Bool(bool) => bool.to_string(),
-            LiteralValue::LoxString(literal) => format!("\"{}\"", literal),
+            LiteralValue::LoxString(literal) => literal.to_owned(),
         };
 
         write!(f, "{}", value)?;
@@ -70,10 +70,7 @@ impl fmt::Display for LiteralValue {
 
 impl From<String> for LiteralValue {
     fn from(value: String) -> Self {
-        match value.parse::<f32>() {
-            Ok(_) => LiteralValue::Float(value),
-            Err(_) => LiteralValue::LoxString(value),
-        }
+        LiteralValue::LoxString(value)
     }
 }
 

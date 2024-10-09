@@ -270,7 +270,7 @@ impl Parser {
                 TT::Nil => self.consume_and_cast_literal(LiteralValue::None),
                 TT::Number(borrowed_float) => {
                     let float = borrowed_float.clone();
-                    self.consume_and_cast_literal(float.into())
+                    self.consume_and_cast_literal(LiteralValue::Float(float))
                 }
                 TT::LoxString(borrowed_str) => {
                     let lox_string = borrowed_str.clone();
