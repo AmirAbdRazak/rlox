@@ -89,6 +89,7 @@ impl fmt::Display for Token {
                 }
             }
             TokenType::LoxString(ref s) => write!(f, "STRING \"{}\" {}", s, s)?,
+            TokenType::Identifier(ref i) => write!(f, "IDENTIFIER {} null", i)?,
             _ => write!(f, "{} {} null", self.token_type_name(), self.token_type)?,
         };
         Ok(())

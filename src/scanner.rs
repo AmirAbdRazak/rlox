@@ -174,9 +174,12 @@ impl<'a> Scanner<'a> {
         return Err(ScannerError::UnterminatedString(line));
     }
 
-    pub fn consume_alphanumerals(&mut self, string: &mut String) {
+    pub fn consume_string<F>(&mut self, string: &mut String, char_pred: F)
+    where
+        F: Fn(char) -> bool,
+    {
         while let Some(&c) = self.source.peek() {
-            if c.is_alphanumeric() {
+            if char_pred(c) {
                 self.source.next();
                 string.push(c);
             } else {
@@ -189,14 +192,14 @@ impl<'a> Scanner<'a> {
         let mut string = String::new();
         string.push(ch);
 
-        self.consume_alphanumerals(&mut string);
+        self.consume_string(&mut string, char::is_numeric);
 
         // Get the leading number
         if let Some(&c) = self.source.peek() {
             if c == '.' {
                 self.source.next();
                 string.push(c);
-                self.consume_alphanumerals(&mut string)
+                self.consume_string(&mut string, char::is_numeric)
             }
         }
 
