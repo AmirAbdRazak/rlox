@@ -28,7 +28,7 @@ pub enum TokenType {
     // Literals.
     Identifier(String),
     LoxString(String),
-    Number(f64),
+    Number(String),
     Nil,
 
     // Keywords.
@@ -80,6 +80,14 @@ impl Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.token_type {
+            TokenType::Number(ref n) => {
+                let parsed_n = n.parse::<f32>().expect("Already parsed the number");
+                if parsed_n.fract() == 0.0 {
+                    write!(f, "NUMBER {} {:.1}", n, parsed_n)?
+                } else {
+                    write!(f, "NUMBER {} {}", n, parsed_n)?
+                }
+            }
             TokenType::LoxString(ref s) => write!(f, "STRING \"{}\" {}", s, s)?,
             _ => write!(f, "{} {} null", self.token_type_name(), self.token_type)?,
         };

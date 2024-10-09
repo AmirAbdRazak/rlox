@@ -200,8 +200,8 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        match string.parse() {
-            Ok(float) => Ok(self.simple_token(TokenType::Number(float))),
+        match string.parse::<f32>() {
+            Ok(_float) => Ok(self.simple_token(TokenType::Number(string))),
             Err(_) => {
                 return Err(ScannerError::UnparseableDigit(string, self.line));
             }
