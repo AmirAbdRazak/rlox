@@ -109,7 +109,7 @@ impl<'a> Scanner<'a> {
     pub fn simple_token(&self, token_type: TokenType) -> Token {
         Token {
             token_type,
-            _line: self.line,
+            line: self.line,
         }
     }
 

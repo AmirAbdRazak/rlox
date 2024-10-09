@@ -51,17 +51,15 @@ pub enum TokenType {
     Eof,
 }
 
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
-    pub _line: usize,
+    pub line: usize,
 }
 
 impl Token {
     pub fn _new(token_type: TokenType, line: usize) -> Token {
-        Token {
-            token_type,
-            _line: line,
-        }
+        Token { token_type, line }
     }
     pub fn token_type_name(&self) -> String {
         format!("{:?}", self.token_type).chars().enumerate().fold(
