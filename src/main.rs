@@ -76,11 +76,11 @@ impl Lox {
         let mut scanner: scanner::Scanner = scanner::Scanner::new(&self.source);
         let (tokens, errors) = scanner.scan_tokens();
 
+        errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
         match self.mode {
             LoxMode::Tokenize => {
-                errors
-                    .iter()
-                    .for_each(|err| self.report(err.line(), format!("{}", err)));
                 tokens.iter().for_each(|token| println!("{token}"));
             }
             _ => {}
@@ -98,8 +98,17 @@ impl Lox {
         let (statements, errors) = parser.parse();
 
         match self.mode {
-            LoxMode::Parse => statements.iter().for_each(|expr| println!("{expr}")),
+            LoxMode::Parse => {
+                errors
+                    .iter()
+                    .for_each(|err| self.report(err.line(), format!("{}", err)));
+                statements.iter().for_each(|expr| println!("{expr}"))
+            }
             _ => {}
+        }
+
+        if self.had_error {
+            exit(65);
         }
     }
 
