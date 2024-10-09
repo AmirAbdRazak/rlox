@@ -34,7 +34,7 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 self.visit_expression(right_expr)
             ),
             Expr::Grouping(Grouping { expression: expr }) => {
-                format!("({})", self.visit_expression(expr))
+                format!("(group {})", self.visit_expression(expr))
             }
             Expr::Literal(literal_value) => format!("{}", literal_value),
         }
