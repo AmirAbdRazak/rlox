@@ -41,10 +41,14 @@ fn main() {
 
             let mut runtime = Lox::new(file_contents, LoxMode::Parse);
             runtime.parse();
+        }
+        "evaluate" => {
+            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+                String::new()
+            });
 
-            if runtime.had_error {
-                exit(65);
-            }
+            let mut runtime = Lox::new(file_contents, LoxMode::Parse);
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
@@ -56,6 +60,7 @@ fn main() {
 pub enum LoxMode {
     Tokenize,
     Parse,
+    Evaluate,
 }
 
 pub struct Lox {
@@ -79,12 +84,7 @@ impl Lox {
         errors
             .iter()
             .for_each(|err| self.report(err.line(), format!("{}", err)));
-        match self.mode {
-            LoxMode::Tokenize => {
-                tokens.iter().for_each(|token| println!("{token}"));
-            }
-            _ => {}
-        }
+        tokens.iter().for_each(|token| println!("{token}"));
 
         if self.had_error {
             exit(65);
@@ -93,19 +93,37 @@ impl Lox {
         tokens
     }
     pub fn parse(&mut self) {
-        let tokens = self.tokenize();
+        let mut scanner: scanner::Scanner = scanner::Scanner::new(&self.source);
+        let (tokens, scanner_errors) = scanner.scan_tokens();
         let mut parser = parser::Parser::new(tokens, ParserMode::Expression);
-        let (statements, errors) = parser.parse();
+        let (statements, parser_errors) = parser.parse();
 
-        match self.mode {
-            LoxMode::Parse => {
-                errors
-                    .iter()
-                    .for_each(|err| self.report(err.line(), format!("{}", err)));
-                statements.iter().for_each(|expr| println!("{expr}"))
-            }
-            _ => {}
+        scanner_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        parser_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        statements.iter().for_each(|token| println!("{token}"));
+
+        if self.had_error {
+            exit(65);
         }
+    }
+
+    pub fn evaluate(&mut self) {
+        let mut scanner: scanner::Scanner = scanner::Scanner::new(&self.source);
+        let (tokens, scanner_errors) = scanner.scan_tokens();
+        let mut parser = parser::Parser::new(tokens, ParserMode::Expression);
+        let (statements, parser_errors) = parser.parse();
+
+        scanner_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        parser_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        statements.iter().for_each(|token| println!("{token}"));
 
         if self.had_error {
             exit(65);
