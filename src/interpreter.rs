@@ -227,7 +227,7 @@ impl std::fmt::Display for Types {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             &Types::Boolean(b) => write!(f, "{}", b),
-            &Types::LoxString(ref s) => write!(f, "\"{}\"", s.to_string()),
+            &Types::LoxString(ref s) => write!(f, "{}", s.to_string()),
             &Types::Nil => write!(f, "nil"),
             &Types::Number(n) => write!(f, "{}", n),
         }
