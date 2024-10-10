@@ -51,6 +51,21 @@ pub enum TokenType {
     Eof,
 }
 
+impl TokenType {
+    pub fn equality_tokens() -> [TokenType; 8] {
+        [
+            TokenType::Bang,
+            TokenType::BangEqual,
+            TokenType::Equal,
+            TokenType::EqualEqual,
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ]
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,

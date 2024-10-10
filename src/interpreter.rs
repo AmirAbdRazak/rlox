@@ -2,6 +2,7 @@ use crate::syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr};
 use crate::token::TokenType as TT;
 use crate::visit::MutVisitor;
 use std::fmt;
+use std::mem::discriminant;
 
 pub enum RuntimeError {
     IncompatibleBinaryOperation(Types, Types, TT, usize),
@@ -87,13 +88,34 @@ impl MutVisitor for Interpreter {
                 let right = self.visit_expression(right_expr)?;
                 let left = self.visit_expression(left_expr)?;
 
+                let error = RuntimeError::IncompatibleBinaryOperation(
+                    left.clone(),
+                    right.clone(),
+                    operator.token_type.clone(),
+                    operator.line,
+                );
+
                 match (&left, &operator.token_type, &right) {
-                    (&Types::Number(n), &TT::Plus, &Types::LoxString(ref s)) => {
-                        Ok(Types::LoxString(format!("{}{}", n, s)))
+                    (left, token_type, right)
+                        if discriminant(left) != discriminant(right)
+                            && TT::equality_tokens().contains(token_type) =>
+                    {
+                        Ok(Types::Boolean(false))
                     }
-                    (&Types::LoxString(ref s), &TT::Plus, &Types::Number(n)) => {
-                        Ok(Types::LoxString(format!("{}{}", s, n)))
-                    }
+                    (&Types::Number(n), token_type, &Types::LoxString(ref s)) => match token_type {
+                        TT::Plus => Ok(Types::LoxString(format!("{}{}", n, s))),
+                        _ if TT::equality_tokens().contains(token_type) => {
+                            Ok(Types::Boolean(false))
+                        }
+                        _ => Err(error),
+                    },
+                    (&Types::LoxString(ref s), token_type, &Types::Number(n)) => match token_type {
+                        TT::Plus => Ok(Types::LoxString(format!("{}{}", s, n))),
+                        _ if TT::equality_tokens().contains(token_type) => {
+                            Ok(Types::Boolean(false))
+                        }
+                        _ => Err(error),
+                    },
                     (&Types::LoxString(ref left_s), token_type, &Types::LoxString(ref right_s)) => {
                         match token_type {
                             TT::Plus => Ok(Types::LoxString(format!("{}{}", left_s, right_s))),
@@ -103,12 +125,7 @@ impl MutVisitor for Interpreter {
                             TT::Less => Ok(Types::Boolean(left_s < right_s)),
                             TT::LessEqual => Ok(Types::Boolean(left_s <= right_s)),
                             TT::BangEqual => Ok(Types::Boolean(left_s != right_s)),
-                            _ => Err(RuntimeError::IncompatibleBinaryOperation(
-                                left,
-                                right,
-                                token_type.clone(),
-                                operator.line,
-                            )),
+                            _ => Err(error),
                         }
                     }
 
@@ -130,43 +147,23 @@ impl MutVisitor for Interpreter {
                             TT::LessEqual => Ok(Types::Boolean(left_n <= right_n)),
                             TT::EqualEqual => Ok(Types::Boolean(left_n == right_n)),
                             TT::BangEqual => Ok(Types::Boolean(left_n != right_n)),
-                            _ => Err(RuntimeError::IncompatibleBinaryOperation(
-                                left,
-                                right,
-                                token_type.clone(),
-                                operator.line,
-                            )),
+                            _ => Err(error),
                         }
                     }
                     (&Types::Nil, token_type, &Types::Nil) => match token_type {
                         TT::Equal => Ok(Types::Boolean(true)),
                         TT::BangEqual => Ok(Types::Boolean(false)),
-                        _ => Err(RuntimeError::IncompatibleBinaryOperation(
-                            left,
-                            right,
-                            token_type.clone(),
-                            operator.line,
-                        )),
+                        _ => Err(error),
                     },
                     (&Types::Boolean(left_b), token_type, &Types::Boolean(right_b)) => {
                         match token_type {
                             TT::Equal => Ok(Types::Boolean(left_b == right_b)),
                             TT::BangEqual => Ok(Types::Boolean(left_b != right_b)),
-                            _ => Err(RuntimeError::IncompatibleBinaryOperation(
-                                left,
-                                right,
-                                token_type.clone(),
-                                operator.line,
-                            )),
+                            _ => Err(error),
                         }
                     }
 
-                    _ => Err(RuntimeError::IncompatibleBinaryOperation(
-                        left,
-                        right,
-                        operator.token_type.clone(),
-                        operator.line,
-                    )),
+                    _ => Err(error),
                 }
             }
             Expr::Unary(UnaryExpr {
