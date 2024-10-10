@@ -3,10 +3,12 @@ use std::fs;
 use std::io::{self, Write};
 use std::process::exit;
 
+use interpreter::Interpreter;
 use parser::ParserMode;
 use token::Token;
 
 mod ast_printer;
+mod interpreter;
 mod parser;
 mod scanner;
 mod syntax;
@@ -30,7 +32,7 @@ fn main() {
                 String::new()
             });
 
-            let mut runtime = Lox::new(file_contents, LoxMode::Tokenize);
+            let mut runtime = Lox::new(file_contents);
             let _ = runtime.tokenize();
         }
         "parse" => {
@@ -39,7 +41,7 @@ fn main() {
                 String::new()
             });
 
-            let mut runtime = Lox::new(file_contents, LoxMode::Parse);
+            let mut runtime = Lox::new(file_contents);
             runtime.parse();
         }
         "evaluate" => {
@@ -48,7 +50,8 @@ fn main() {
                 String::new()
             });
 
-            let mut runtime = Lox::new(file_contents, LoxMode::Parse);
+            let mut runtime = Lox::new(file_contents);
+            runtime.evaluate();
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
@@ -57,23 +60,15 @@ fn main() {
     }
 }
 
-pub enum LoxMode {
-    Tokenize,
-    Parse,
-    Evaluate,
-}
-
 pub struct Lox {
     source: String,
     had_error: bool,
-    mode: LoxMode,
 }
 impl Lox {
-    pub fn new(source: String, mode: LoxMode) -> Lox {
+    pub fn new(source: String) -> Lox {
         Lox {
             source,
             had_error: false,
-            mode,
         }
     }
 
@@ -104,7 +99,7 @@ impl Lox {
         parser_errors
             .iter()
             .for_each(|err| self.report(err.line(), format!("{}", err)));
-        statements.iter().for_each(|token| println!("{token}"));
+        statements.iter().for_each(|stmt| println!("{stmt}"));
 
         if self.had_error {
             exit(65);
@@ -116,6 +111,8 @@ impl Lox {
         let (tokens, scanner_errors) = scanner.scan_tokens();
         let mut parser = parser::Parser::new(tokens, ParserMode::Expression);
         let (statements, parser_errors) = parser.parse();
+        let mut interpreter = Interpreter::new();
+        let (evals, runtime_errors) = interpreter.interpret(&statements);
 
         scanner_errors
             .iter()
@@ -123,7 +120,10 @@ impl Lox {
         parser_errors
             .iter()
             .for_each(|err| self.report(err.line(), format!("{}", err)));
-        statements.iter().for_each(|token| println!("{token}"));
+        runtime_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        evals.iter().for_each(|eval| println!("{eval}"));
 
         if self.had_error {
             exit(65);

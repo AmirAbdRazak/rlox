@@ -2,25 +2,25 @@ use std::fmt;
 
 use crate::{ast_printer::ASTStringVisitor, token::Token};
 
-#[derive(Debug, Clone)]
-pub enum UnaryOperator {
-    Bang,
-    Minus,
-}
-
-#[derive(Debug, Clone)]
-pub enum BinaryOperator {
-    Minus,
-    Plus,
-    Slash,
-    Star,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-}
+// #[derive(Debug, Clone)]
+// pub enum UnaryOperator {
+//     Bang,
+//     Minus,
+// }
+//
+// #[derive(Debug, Clone)]
+// pub enum BinaryOperator {
+//     Minus,
+//     Plus,
+//     Slash,
+//     Star,
+//     Equal,
+//     NotEqual,
+//     Less,
+//     LessEqual,
+//     Greater,
+//     GreaterEqual,
+// }
 
 #[derive(Clone)]
 pub struct BinaryExpr {
