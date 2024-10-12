@@ -52,17 +52,8 @@ pub enum TokenType {
 }
 
 impl TokenType {
-    pub fn equality_tokens() -> [TokenType; 8] {
-        [
-            TokenType::Bang,
-            TokenType::BangEqual,
-            TokenType::Equal,
-            TokenType::EqualEqual,
-            TokenType::Greater,
-            TokenType::GreaterEqual,
-            TokenType::Less,
-            TokenType::LessEqual,
-        ]
+    pub fn equality_tokens() -> [TokenType; 2] {
+        [TokenType::BangEqual, TokenType::EqualEqual]
     }
 }
 
