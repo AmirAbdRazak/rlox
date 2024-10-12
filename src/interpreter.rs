@@ -52,13 +52,13 @@ impl RuntimeError {
 }
 
 pub struct Interpreter {
-    _had_runtime_error: bool,
+    had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            _had_runtime_error: false,
+            had_runtime_error: false,
         }
     }
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
@@ -68,7 +68,11 @@ impl Interpreter {
         for statement in program {
             match self.visit_statement(statement) {
                 Ok(eval) => evals.push(eval),
-                Err(runtime_error) => runtime_errors.push(runtime_error),
+                Err(runtime_error) => {
+                    runtime_errors.push(runtime_error);
+                    self.had_runtime_error = true;
+                    break;
+                }
             }
         }
 
@@ -151,13 +155,13 @@ impl MutVisitor for Interpreter {
                         }
                     }
                     (&Types::Nil, token_type, &Types::Nil) => match token_type {
-                        TT::Equal => Ok(Types::Boolean(true)),
+                        TT::EqualEqual => Ok(Types::Boolean(true)),
                         TT::BangEqual => Ok(Types::Boolean(false)),
                         _ => Err(error),
                     },
                     (&Types::Boolean(left_b), token_type, &Types::Boolean(right_b)) => {
                         match token_type {
-                            TT::Equal => Ok(Types::Boolean(left_b == right_b)),
+                            TT::EqualEqual => Ok(Types::Boolean(left_b == right_b)),
                             TT::BangEqual => Ok(Types::Boolean(left_b != right_b)),
                             _ => Err(error),
                         }
@@ -171,10 +175,6 @@ impl MutVisitor for Interpreter {
                 right: right_expr,
             }) => {
                 let right = self.visit_expression(right_expr)?;
-                if operator.token_type == TT::Print {
-                    println!("{}", right);
-                    return Ok(Types::Nil);
-                }
 
                 match (&right, &operator.token_type) {
                     (Types::Number(n), &TT::Minus) => Ok(Types::Number(-n)),
@@ -210,7 +210,9 @@ impl MutVisitor for Interpreter {
             }
             Stmt::Print(ref expr) => {
                 let evaluation = self.visit_expression(expr)?;
-                println!("{evaluation}");
+                if !self.had_runtime_error {
+                    println!("{evaluation}");
+                }
                 Ok(Types::Nil)
             }
         }
