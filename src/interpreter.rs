@@ -208,6 +208,11 @@ impl MutVisitor for Interpreter {
                 let evaluation = self.visit_expression(expr)?;
                 Ok(evaluation)
             }
+            Stmt::Print(ref expr) => {
+                let evaluation = self.visit_expression(expr)?;
+                println!("{evaluation}");
+                Ok(Types::Nil)
+            }
         }
     }
 }

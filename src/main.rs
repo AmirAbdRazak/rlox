@@ -53,6 +53,15 @@ fn main() {
             let mut runtime = Lox::new(file_contents);
             runtime.evaluate();
         }
+        "run" => {
+            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+                String::new()
+            });
+
+            let mut runtime = Lox::new(file_contents);
+            runtime.run();
+        }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
@@ -120,6 +129,11 @@ impl Lox {
         parser_errors
             .iter()
             .for_each(|err| self.report(err.line(), format!("{}", err)));
+
+        if self.had_error {
+            exit(65);
+        }
+
         runtime_errors
             .iter()
             .for_each(|err| self.report(err.line(), format!("{}", err)));
@@ -130,6 +144,33 @@ impl Lox {
         }
     }
 
+    pub fn run(&mut self) {
+        let mut scanner: scanner::Scanner = scanner::Scanner::new(&self.source);
+        let (tokens, scanner_errors) = scanner.scan_tokens();
+        let mut parser = parser::Parser::new(tokens, ParserMode::Expression);
+        let (statements, parser_errors) = parser.parse();
+        let mut interpreter = Interpreter::new();
+        let (_evals, runtime_errors) = interpreter.interpret(&statements);
+
+        scanner_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+        parser_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+
+        if self.had_error {
+            exit(65);
+        }
+
+        runtime_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("{}", err)));
+
+        if self.had_error {
+            exit(70);
+        }
+    }
     pub fn report(&mut self, line: usize, message: String) {
         eprintln!("[line {}] Error: {}", line, message);
         self.had_error = true;

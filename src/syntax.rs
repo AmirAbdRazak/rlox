@@ -91,6 +91,7 @@ pub enum Expr {
 #[derive(Clone)]
 pub enum Stmt {
     Expression(Expr),
+    Print(Expr),
 }
 
 impl fmt::Display for Expr {

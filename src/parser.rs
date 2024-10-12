@@ -126,8 +126,30 @@ impl Parser {
             .expect("Already checked above but for whatever reason if this gets up then idk")
             .token_type
         {
+            TT::Print => self.print_statement(),
             _ => self.expr_statement(),
         }
+    }
+
+    pub fn print_statement(&mut self) -> ParserResult<Stmt> {
+        let print_token = self.tokens.next().unwrap(); // Consume 'print'
+
+        let value = self.expression()?; // Parse the expression to print
+
+        // Expect a semicolon after the expression
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Semicolon => {
+                self.tokens.next(); // Consume the semicolon
+            }
+            Some(token) => {
+                return Err(ParserError::MissingSemicolon(token.line));
+            }
+            None => {
+                return Err(ParserError::MissingSemicolon(self.prev_token_line));
+            }
+        }
+
+        Ok(Stmt::Print(value))
     }
 
     pub fn expr_statement(&mut self) -> ParserResult<Stmt> {

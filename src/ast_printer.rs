@@ -45,6 +45,7 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
             Stmt::Expression(ref expr) => {
                 format!("{}", self.visit_expression(expr))
             }
+            Stmt::Print(ref expr) => format!("Print {}", self.visit_expression(expr)),
         }
     }
 }
