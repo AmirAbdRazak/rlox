@@ -126,7 +126,7 @@ impl Lox {
         evals.iter().for_each(|eval| println!("{eval}"));
 
         if self.had_error {
-            exit(65);
+            exit(70);
         }
     }
 

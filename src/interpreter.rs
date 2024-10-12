@@ -24,12 +24,14 @@ impl fmt::Display for RuntimeError {
                     left_type, operation_token, right_type
                 )?;
             }
-            RuntimeError::IncompatibleUnaryOperation(right_type, operation_token, _) => {
-                write!(
-                    f,
-                    "Incompatible operation: <{}{}>",
-                    operation_token, right_type
-                )?;
+            RuntimeError::IncompatibleUnaryOperation(right_type, operation_token, _line) => {
+                match operation_token {
+                    _ => write!(
+                        f,
+                        "Incompatible operation: <{}{}>",
+                        operation_token, right_type
+                    )?,
+                };
             }
             RuntimeError::NullDivisionError(_) => {
                 write!(f, "Division by zero is not supported")?;
