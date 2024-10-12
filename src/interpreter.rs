@@ -105,14 +105,12 @@ impl MutVisitor for Interpreter {
                         Ok(Types::Boolean(false))
                     }
                     (&Types::Number(n), token_type, &Types::LoxString(ref s)) => match token_type {
-                        TT::Plus => Ok(Types::LoxString(format!("{}{}", n, s))),
                         _ if TT::equality_tokens().contains(token_type) => {
                             Ok(Types::Boolean(false))
                         }
                         _ => Err(error),
                     },
                     (&Types::LoxString(ref s), token_type, &Types::Number(n)) => match token_type {
-                        TT::Plus => Ok(Types::LoxString(format!("{}{}", s, n))),
                         _ if TT::equality_tokens().contains(token_type) => {
                             Ok(Types::Boolean(false))
                         }
