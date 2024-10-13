@@ -1,6 +1,7 @@
-use crate::syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr};
-use crate::token::TokenType as TT;
+use crate::syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr};
+use crate::token::{Token, TokenType as TT};
 use crate::visit::MutVisitor;
+use std::collections::HashMap;
 use std::fmt;
 use std::mem::discriminant;
 
@@ -8,6 +9,7 @@ pub enum RuntimeError {
     IncompatibleBinaryOperation(Types, Types, TT, usize),
     IncompatibleUnaryOperation(Types, TT, usize),
     NullDivisionError(usize),
+    UndefinedVariable(String, usize),
 }
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -36,6 +38,9 @@ impl fmt::Display for RuntimeError {
             RuntimeError::NullDivisionError(_) => {
                 write!(f, "Division by zero is not supported")?;
             }
+            RuntimeError::UndefinedVariable(var_name, _) => {
+                write!(f, "Undefined Variable : {var_name}")?;
+            }
         }
         Ok(())
     }
@@ -47,17 +52,55 @@ impl RuntimeError {
             RuntimeError::IncompatibleBinaryOperation(_, _, _, line) => line,
             RuntimeError::IncompatibleUnaryOperation(_, _, line) => line,
             RuntimeError::NullDivisionError(line) => line,
+            RuntimeError::UndefinedVariable(_, line) => line,
         }
     }
 }
 
+type RuntimeResult<T> = Result<T, RuntimeError>;
+
+pub struct Environment {
+    values: HashMap<String, Types>,
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Self {
+            values: HashMap::new(),
+        }
+    }
+
+    fn extract_identifier(&self, token: &TT) -> String {
+        if let TT::Identifier(name) = token {
+            name.to_string()
+        } else {
+            panic!("Only pass Identifier tokens here")
+        }
+    }
+
+    pub fn define(&mut self, token: &Token, value: Types) {
+        let name = self.extract_identifier(&token.token_type);
+        self.values.insert(name, value);
+    }
+
+    pub fn get(&self, token: &Token) -> RuntimeResult<Types> {
+        let name = self.extract_identifier(&token.token_type);
+        self.values
+            .get(&name)
+            .ok_or(RuntimeError::UndefinedVariable(name, token.line))
+            .cloned()
+    }
+}
+
 pub struct Interpreter {
+    pub environment: Environment,
     had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
+            environment: Environment::new(),
             had_runtime_error: false,
         }
     }
@@ -108,13 +151,13 @@ impl MutVisitor for Interpreter {
                     {
                         Ok(Types::Boolean(false))
                     }
-                    (&Types::Number(n), token_type, &Types::LoxString(ref s)) => match token_type {
+                    (&Types::Number(_), token_type, &Types::LoxString(_)) => match token_type {
                         _ if TT::equality_tokens().contains(token_type) => {
                             Ok(Types::Boolean(false))
                         }
                         _ => Err(error),
                     },
-                    (&Types::LoxString(ref s), token_type, &Types::Number(n)) => match token_type {
+                    (&Types::LoxString(_), token_type, &Types::Number(_)) => match token_type {
                         _ if TT::equality_tokens().contains(token_type) => {
                             Ok(Types::Boolean(false))
                         }
@@ -199,6 +242,7 @@ impl MutVisitor for Interpreter {
                 Ok(ret_val)
             }
             Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
+            Expr::Variable(VariableExpr { id: _, ref name }) => self.environment.get(name),
         }
     }
 
@@ -213,6 +257,16 @@ impl MutVisitor for Interpreter {
                 if !self.had_runtime_error {
                     println!("{evaluation}");
                 }
+                Ok(Types::Nil)
+            }
+            Stmt::VariableDeclaration(ref token, ref initializer) => {
+                let value = initializer
+                    .as_ref()
+                    .map(|expr| self.visit_expression(expr))
+                    .transpose()?
+                    .unwrap_or(Types::Nil);
+
+                self.environment.define(token, value);
                 Ok(Types::Nil)
             }
         }

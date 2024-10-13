@@ -37,6 +37,7 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 format!("(group {})", self.visit_expression(expr))
             }
             Expr::Literal(literal_value) => format!("{}", literal_value),
+            Expr::Variable(variable) => format!("{}", variable.name),
         }
     }
 
@@ -46,6 +47,13 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 format!("{}", self.visit_expression(expr))
             }
             Stmt::Print(ref expr) => format!("Print {}", self.visit_expression(expr)),
+            Stmt::VariableDeclaration(_, ref expr) => {
+                if let Some(ref expr) = expr {
+                    format!("{}", self.visit_expression(expr))
+                } else {
+                    "nil".to_string()
+                }
+            }
         }
     }
 }

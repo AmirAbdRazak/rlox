@@ -147,7 +147,7 @@ impl Lox {
     pub fn run(&mut self) {
         let mut scanner: scanner::Scanner = scanner::Scanner::new(&self.source);
         let (tokens, scanner_errors) = scanner.scan_tokens();
-        let mut parser = parser::Parser::new(tokens, ParserMode::Expression);
+        let mut parser = parser::Parser::new(tokens, ParserMode::Statement);
         let (statements, parser_errors) = parser.parse();
         let mut interpreter = Interpreter::new();
         let (_evals, runtime_errors) = interpreter.interpret(&statements);

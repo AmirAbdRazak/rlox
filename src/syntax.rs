@@ -45,6 +45,11 @@ pub enum LiteralValue {
     Bool(bool),
     None,
 }
+#[derive(Clone)]
+pub struct VariableExpr {
+    pub id: usize,
+    pub name: Token,
+}
 
 impl fmt::Display for LiteralValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -86,12 +91,14 @@ pub enum Expr {
     Grouping(Grouping),
     Literal(LiteralValue),
     Unary(UnaryExpr),
+    Variable(VariableExpr),
 }
 
 #[derive(Clone)]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),
+    VariableDeclaration(Token, Option<Expr>),
 }
 
 impl fmt::Display for Expr {

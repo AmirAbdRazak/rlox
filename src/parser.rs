@@ -1,8 +1,9 @@
+use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
 
 use crate::{
-    syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr},
+    syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr},
     token::{Token, TokenType as TT},
 };
 
@@ -16,6 +17,7 @@ pub enum ParserError {
     EmptyPrimary(usize),
     EmptyExpression(usize),
     MissingSemicolon(usize),
+    ExpectedVariableName(String, usize),
 }
 
 impl fmt::Display for ParserError {
@@ -48,6 +50,13 @@ impl fmt::Display for ParserError {
             ParserError::MissingSemicolon(line) => {
                 write!(f, "Parser Error: Expected semicolon at line {}.", line)?;
             }
+            ParserError::ExpectedVariableName(token, line) => {
+                write!(
+                    f,
+                    "Parser Error: Expected variable after var at line {}, got {}.",
+                    line, token
+                )?;
+            }
         }
 
         Ok(())
@@ -62,6 +71,7 @@ impl ParserError {
             ParserError::EmptyPrimary(line) => line,
             ParserError::EmptyExpression(line) => line,
             ParserError::MissingSemicolon(line) => line,
+            ParserError::ExpectedVariableName(_, line) => line,
         }
     }
 }
@@ -75,6 +85,7 @@ pub struct Parser {
     tokens: TokenPeekable,
     prev_token_line: usize,
     mode: ParserMode,
+    id: Cell<usize>,
 }
 
 impl Parser {
@@ -84,7 +95,13 @@ impl Parser {
             tokens: iter_tokens.peekable(),
             prev_token_line: 0,
             mode,
+            id: Cell::new(0),
         }
+    }
+    fn new_id(&self) -> usize {
+        let new_id = self.id.get();
+        self.id.set(new_id + 1);
+        new_id
     }
 
     pub fn parse(&mut self) -> (Vec<Stmt>, Vec<ParserError>) {
@@ -115,7 +132,47 @@ impl Parser {
             .expect("Already checked above but for whatever reason if this gets up then idk")
             .token_type
         {
+            TT::Var => self.var_declaration(),
             _ => self.statement(),
+        }
+    }
+
+    pub fn var_declaration(&mut self) -> ParserResult<Stmt> {
+        let var_token = self
+            .tokens
+            .next()
+            .expect("It just said there was a Var in the previous peek");
+
+        if let Some(_) = self.tokens.peek() {
+            let token = self.tokens.next().unwrap();
+            match token.token_type {
+                TT::Identifier(_) => {
+                    let expr = if self
+                        .tokens
+                        .peek()
+                        .is_some_and(|next_token| matches!(next_token.token_type, TT::Equal))
+                    {
+                        let _consume_eq = self.tokens.next().unwrap();
+                        Some(self.expression()?)
+                    } else {
+                        None
+                    };
+
+                    match self.tokens.next().unwrap().token_type {
+                        TT::Semicolon => Ok(Stmt::VariableDeclaration(token.clone(), expr)),
+                        _ => Err(ParserError::MissingSemicolon(token.line)),
+                    }
+                }
+                _other_token => Err(ParserError::ExpectedVariableName(
+                    _other_token.to_string(),
+                    var_token.line,
+                )),
+            }
+        } else {
+            Err(ParserError::ExpectedVariableName(
+                "None".to_string(),
+                var_token.line,
+            ))
         }
     }
 
@@ -132,22 +189,14 @@ impl Parser {
     }
 
     pub fn print_statement(&mut self) -> ParserResult<Stmt> {
-        let print_token = self.tokens.next().unwrap(); // Consume 'print'
+        let _print_token = self.tokens.next().unwrap();
+        let value = self.expression()?;
 
-        let value = self.expression()?; // Parse the expression to print
-
-        // Expect a semicolon after the expression
         match self.tokens.peek() {
-            Some(token) if token.token_type == TT::Semicolon => {
-                self.tokens.next(); // Consume the semicolon
-            }
-            Some(token) => {
-                return Err(ParserError::MissingSemicolon(token.line));
-            }
-            None => {
-                return Err(ParserError::MissingSemicolon(self.prev_token_line));
-            }
-        }
+            Some(token) if token.token_type == TT::Semicolon => self.tokens.next(),
+            Some(token) => return Err(ParserError::MissingSemicolon(token.line)),
+            _ => return Err(ParserError::MissingSemicolon(self.prev_token_line)),
+        };
 
         Ok(Stmt::Print(value))
     }
@@ -248,7 +297,6 @@ impl Parser {
 
     fn primary(&mut self) -> ParserResult<Expr> {
         if let Some(peek_token) = self.tokens.peek() {
-            // Update prev token.line pointer
             self.prev_token_line = peek_token.line;
 
             match &peek_token.token_type {
@@ -297,6 +345,14 @@ impl Parser {
                 TT::LoxString(borrowed_str) => {
                     let lox_string = borrowed_str.clone();
                     self.consume_and_cast_literal(lox_string.into())
+                }
+                TT::Identifier(_) => {
+                    let identifier_token = self.tokens.next().unwrap();
+                    let new_id = self.new_id();
+                    Ok(Expr::Variable(VariableExpr {
+                        id: new_id,
+                        name: identifier_token,
+                    }))
                 }
 
                 _ => Err(ParserError::NonPrimaryToken(
