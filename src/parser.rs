@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
 
+use crate::syntax::AssignmentExpr;
 use crate::{
     syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr},
     token::{Token, TokenType as TT},
@@ -18,6 +19,7 @@ pub enum ParserError {
     EmptyExpression(usize),
     MissingSemicolon(usize),
     ExpectedVariableName(String, usize),
+    InvalidAssignmentTarget(Token, usize),
 }
 
 impl fmt::Display for ParserError {
@@ -57,6 +59,13 @@ impl fmt::Display for ParserError {
                     line, token
                 )?;
             }
+            ParserError::InvalidAssignmentTarget(token, line) => {
+                write!(
+                    f,
+                    "Parser Error: Invalid assignment target at line {}, got {}.",
+                    line, token
+                )?;
+            }
         }
 
         Ok(())
@@ -72,6 +81,7 @@ impl ParserError {
             ParserError::EmptyExpression(line) => line,
             ParserError::MissingSemicolon(line) => line,
             ParserError::ExpectedVariableName(_, line) => line,
+            ParserError::InvalidAssignmentTarget(_, line) => line,
         }
     }
 }
@@ -147,16 +157,15 @@ impl Parser {
             let token = self.tokens.next().unwrap();
             match token.token_type {
                 TT::Identifier(_) => {
-                    let expr = if self
-                        .tokens
-                        .peek()
-                        .is_some_and(|next_token| matches!(next_token.token_type, TT::Equal))
-                    {
-                        let _consume_eq = self.tokens.next().unwrap();
-                        Some(self.expression()?)
-                    } else {
-                        None
-                    };
+                    let expr =
+                        if self.tokens.peek().is_some_and(|next_token| {
+                            matches!(next_token.token_type, TT::Assignment)
+                        }) {
+                            let _consume_eq = self.tokens.next().unwrap();
+                            Some(self.expression()?)
+                        } else {
+                            None
+                        };
 
                     match self.tokens.next().unwrap().token_type {
                         TT::Semicolon => Ok(Stmt::VariableDeclaration(token.clone(), expr)),
@@ -251,7 +260,33 @@ impl Parser {
     }
 
     fn expression(&mut self) -> ParserResult<Expr> {
-        return self.equality();
+        return self.assignment();
+    }
+
+    fn assignment(&mut self) -> ParserResult<Expr> {
+        let expr = self.equality()?;
+        let peek_token = self.tokens.peek().unwrap();
+
+        if matches!(peek_token.token_type, TT::Assignment) {
+            // Update prev token.line pointer
+            let line = peek_token.line;
+            self.prev_token_line = line;
+            let operator = self.tokens.next().unwrap();
+            let right = self.assignment()?;
+
+            match expr {
+                Expr::Variable(VariableExpr { id: _id, ref name }) => {
+                    return Ok(Expr::Assignment(AssignmentExpr {
+                        id: self.new_id(),
+                        name: name.clone(),
+                        expression: Box::new(right),
+                    }));
+                }
+                _ => return Err(ParserError::InvalidAssignmentTarget(operator.clone(), line)),
+            }
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> ParserResult<Expr> {

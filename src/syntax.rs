@@ -50,6 +50,12 @@ pub struct VariableExpr {
     pub id: usize,
     pub name: Token,
 }
+#[derive(Clone)]
+pub struct AssignmentExpr {
+    pub id: usize,
+    pub name: Token,
+    pub expression: Box<Expr>,
+}
 
 impl fmt::Display for LiteralValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -92,6 +98,7 @@ pub enum Expr {
     Literal(LiteralValue),
     Unary(UnaryExpr),
     Variable(VariableExpr),
+    Assignment(AssignmentExpr),
 }
 
 #[derive(Clone)]

@@ -18,7 +18,7 @@ pub enum TokenType {
     // One or two character tokens.
     Bang,
     BangEqual,
-    Equal,
+    Assignment,
     EqualEqual,
     Greater,
     GreaterEqual,
@@ -94,6 +94,7 @@ impl fmt::Display for Token {
             }
             TokenType::LoxString(ref s) => write!(f, "STRING \"{}\" {}", s, s)?,
             TokenType::Identifier(ref i) => write!(f, "IDENTIFIER {} null", i)?,
+            TokenType::Assignment => write!(f, "EQUAL = null")?,
             _ => write!(f, "{} {} null", self.token_type_name(), self.token_type)?,
         };
         Ok(())
@@ -119,7 +120,7 @@ impl fmt::Display for TokenType {
             // One or two character tokens.
             Bang => "!",
             BangEqual => "!=",
-            Equal => "=",
+            Assignment => "=",
             EqualEqual => "==",
             Greater => ">",
             GreaterEqual => ">=",

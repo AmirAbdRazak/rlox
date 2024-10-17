@@ -1,4 +1,6 @@
-use crate::syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr};
+use crate::syntax::{
+    AssignmentExpr, BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr,
+};
 use crate::token::{Token, TokenType as TT};
 use crate::visit::MutVisitor;
 use std::collections::HashMap;
@@ -10,6 +12,7 @@ pub enum RuntimeError {
     IncompatibleUnaryOperation(Types, TT, usize),
     NullDivisionError(usize),
     UndefinedVariable(String, usize),
+    InvalidAssignment(String, usize),
 }
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -33,13 +36,16 @@ impl fmt::Display for RuntimeError {
                         "Incompatible operation: <{}{}>",
                         operation_token, right_type
                     )?,
-                };
+                }
             }
             RuntimeError::NullDivisionError(_) => {
                 write!(f, "Division by zero is not supported")?;
             }
             RuntimeError::UndefinedVariable(var_name, _) => {
                 write!(f, "Undefined Variable : {var_name}")?;
+            }
+            RuntimeError::InvalidAssignment(name, _) => {
+                write!(f, "Invalid Assignment: {name}")?;
             }
         }
         Ok(())
@@ -53,6 +59,7 @@ impl RuntimeError {
             RuntimeError::IncompatibleUnaryOperation(_, _, line) => line,
             RuntimeError::NullDivisionError(line) => line,
             RuntimeError::UndefinedVariable(_, line) => line,
+            RuntimeError::InvalidAssignment(_, line) => line,
         }
     }
 }
@@ -89,6 +96,16 @@ impl Environment {
             .get(&name)
             .ok_or(RuntimeError::UndefinedVariable(name, token.line))
             .cloned()
+    }
+
+    pub fn assign(&mut self, name_token: &Token, value: Types) -> RuntimeResult<Types> {
+        let name = self.extract_identifier(&name_token.token_type);
+        if self.values.contains_key(&name) {
+            self.values.insert(name, value.clone());
+            Ok(value)
+        } else {
+            Err(RuntimeError::InvalidAssignment(name, name_token.line))
+        }
     }
 }
 
@@ -243,6 +260,14 @@ impl MutVisitor for Interpreter {
             }
             Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
             Expr::Variable(VariableExpr { id: _, ref name }) => self.environment.get(name),
+            Expr::Assignment(AssignmentExpr {
+                id: _,
+                ref name,
+                ref expression,
+            }) => {
+                let value = self.visit_expression(expression)?;
+                self.environment.assign(name, value)
+            }
         }
     }
 

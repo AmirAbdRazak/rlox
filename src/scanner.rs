@@ -244,7 +244,7 @@ impl<'a> Scanner<'a> {
             '*' => self.simple_token(Star),
 
             '!' => self.scan_operator(Bang, BangEqual),
-            '=' => self.scan_operator(Equal, EqualEqual),
+            '=' => self.scan_operator(Assignment, EqualEqual),
             '<' => self.scan_operator(Less, LessEqual),
             '>' => self.scan_operator(Greater, GreaterEqual),
 

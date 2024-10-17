@@ -38,6 +38,9 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
             }
             Expr::Literal(literal_value) => format!("{}", literal_value),
             Expr::Variable(variable) => format!("{}", variable.name),
+            Expr::Assignment(assignment) => {
+                format!("{} = {}", assignment.name, assignment.expression)
+            }
         }
     }
 
