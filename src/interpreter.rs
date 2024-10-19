@@ -3,9 +3,12 @@ use crate::syntax::{
 };
 use crate::token::{Token, TokenType as TT};
 use crate::visit::MutVisitor;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt;
 use std::mem::discriminant;
+use std::rc::Rc;
+use std::{fmt, mem};
 
 pub enum RuntimeError {
     IncompatibleBinaryOperation(Types, Types, TT, usize),
@@ -66,14 +69,24 @@ impl RuntimeError {
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
+#[derive(Clone)]
 pub struct Environment {
-    values: HashMap<String, Types>,
+    enclosing: Option<Rc<Environment>>,
+    values: RefCell<HashMap<String, Types>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self {
-            values: HashMap::new(),
+            enclosing: None,
+            values: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub fn inherit_new(environment: Rc<Environment>) -> Self {
+        Self {
+            enclosing: Some(environment),
+            values: RefCell::new(HashMap::new()),
         }
     }
 
@@ -85,24 +98,29 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, token: &Token, value: Types) {
+    pub fn define(&self, token: &Token, value: Types) {
         let name = self.extract_identifier(&token.token_type);
-        self.values.insert(name, value);
+        self.values.borrow_mut().insert(name, value);
     }
 
     pub fn get(&self, token: &Token) -> RuntimeResult<Types> {
         let name = self.extract_identifier(&token.token_type);
-        self.values
-            .get(&name)
-            .ok_or(RuntimeError::UndefinedVariable(name, token.line))
-            .cloned()
+        if let Some(value) = self.values.borrow().get(&name) {
+            Ok(value.clone())
+        } else if let Some(ref enclosing) = self.enclosing {
+            enclosing.get(token)
+        } else {
+            Err(RuntimeError::UndefinedVariable(name, token.line))
+        }
     }
 
-    pub fn assign(&mut self, name_token: &Token, value: Types) -> RuntimeResult<Types> {
+    pub fn assign(&self, name_token: &Token, value: Types) -> RuntimeResult<Types> {
         let name = self.extract_identifier(&name_token.token_type);
-        if self.values.contains_key(&name) {
-            self.values.insert(name, value.clone());
+        if self.values.borrow().contains_key(&name) {
+            self.values.borrow_mut().insert(name, value.clone());
             Ok(value)
+        } else if let Some(ref enclosing) = self.enclosing {
+            enclosing.assign(name_token, value)
         } else {
             Err(RuntimeError::InvalidAssignment(name, name_token.line))
         }
@@ -110,14 +128,14 @@ impl Environment {
 }
 
 pub struct Interpreter {
-    pub environment: Environment,
+    pub environment: Rc<Environment>,
     had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            environment: Environment::new(),
+            environment: Rc::new(Environment::new()),
             had_runtime_error: false,
         }
     }
@@ -137,6 +155,17 @@ impl Interpreter {
         }
 
         (evals, runtime_errors)
+    }
+    pub fn execute_block(&mut self, statements: &[Stmt], environment: Environment) {
+        let previous = mem::replace(&mut self.environment, Rc::new(environment));
+        for statement in statements {
+            let w = self.visit_statement(statement);
+            if let Err(err) = w {
+                self.had_runtime_error = true;
+                println!("Runtime error: {}", err);
+            }
+        }
+        self.environment = previous;
     }
 }
 
@@ -275,14 +304,13 @@ impl MutVisitor for Interpreter {
         match statement {
             Stmt::Expression(ref expr) => {
                 let evaluation = self.visit_expression(expr)?;
-                Ok(evaluation)
+                return Ok(evaluation);
             }
             Stmt::Print(ref expr) => {
                 let evaluation = self.visit_expression(expr)?;
                 if !self.had_runtime_error {
                     println!("{evaluation}");
                 }
-                Ok(Types::Nil)
             }
             Stmt::VariableDeclaration(ref token, ref initializer) => {
                 let value = initializer
@@ -291,10 +319,15 @@ impl MutVisitor for Interpreter {
                     .transpose()?
                     .unwrap_or(Types::Nil);
 
-                self.environment.define(token, value);
-                Ok(Types::Nil)
+                self.environment.borrow_mut().define(token, value)
             }
+            Stmt::Block(ref statements) => self.execute_block(
+                statements,
+                Environment::inherit_new(self.environment.clone()),
+            ),
         }
+
+        Ok(Types::Nil)
     }
 }
 

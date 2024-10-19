@@ -193,7 +193,28 @@ impl Parser {
             .token_type
         {
             TT::Print => self.print_statement(),
+            TT::LeftBrace => self.block_statement(),
             _ => self.expr_statement(),
+        }
+    }
+
+    pub fn block_statement(&mut self) -> ParserResult<Stmt> {
+        let mut statements: Vec<Stmt> = Vec::new();
+        let _consume_left_brace = self.tokens.next();
+
+        while match self.tokens.peek() {
+            Some(token) if matches!(token.token_type, TT::RightBrace) => false,
+            _ => true,
+        } {
+            let decl = self.declaration()?;
+            statements.push(decl);
+        }
+
+        match self.tokens.next() {
+            Some(token) if matches!(token.token_type, TT::RightBrace) => {
+                Ok(Stmt::Block(statements))
+            }
+            _ => Err(ParserError::EmptyPrimary(self.prev_token_line)),
         }
     }
 

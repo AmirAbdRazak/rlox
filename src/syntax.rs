@@ -106,6 +106,7 @@ pub enum Stmt {
     Expression(Expr),
     Print(Expr),
     VariableDeclaration(Token, Option<Expr>),
+    Block(Vec<Stmt>),
 }
 
 impl fmt::Display for Expr {

@@ -57,6 +57,13 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                     "nil".to_string()
                 }
             }
+            Stmt::Block(ref statements) => format!(
+                "(Block Statement {})",
+                statements
+                    .iter()
+                    .map(|s| self.visit_statement(s))
+                    .collect::<String>()
+            ),
         }
     }
 }
