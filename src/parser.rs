@@ -20,6 +20,7 @@ pub enum ParserError {
     MissingSemicolon(usize),
     ExpectedVariableName(String, usize),
     InvalidAssignmentTarget(Token, usize),
+    MissingClosingBraces(usize),
 }
 
 impl fmt::Display for ParserError {
@@ -66,6 +67,9 @@ impl fmt::Display for ParserError {
                     line, token
                 )?;
             }
+            ParserError::MissingClosingBraces(line) => {
+                write!(f, "Parser Error: Missing closing braces on line {}.", line)?;
+            }
         }
 
         Ok(())
@@ -82,6 +86,7 @@ impl ParserError {
             ParserError::MissingSemicolon(line) => line,
             ParserError::ExpectedVariableName(_, line) => line,
             ParserError::InvalidAssignmentTarget(_, line) => line,
+            ParserError::MissingClosingBraces(line) => line,
         }
     }
 }
@@ -214,7 +219,7 @@ impl Parser {
             Some(token) if matches!(token.token_type, TT::RightBrace) => {
                 Ok(Stmt::Block(statements))
             }
-            _ => Err(ParserError::EmptyPrimary(self.prev_token_line)),
+            _ => Err(ParserError::MissingClosingBraces(self.prev_token_line)),
         }
     }
 
