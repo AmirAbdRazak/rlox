@@ -529,7 +529,7 @@ impl Callable for Function {
         interpreter: &mut Interpreter,
         mut arguments: Vec<Types>,
     ) -> RuntimeResult<Types> {
-        let environment = Environment::global();
+        let environment = Environment::inherit_new(self.closure.clone());
 
         for (i, arg) in arguments.drain(..).enumerate() {
             environment.define(&self.parameters[i].token_type, arg);
