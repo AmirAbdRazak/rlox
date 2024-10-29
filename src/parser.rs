@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
 
-use crate::syntax::AssignmentExpr;
+use crate::syntax::{AssignmentExpr, CallExpr, LogicalExpr};
 use crate::{
     syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr},
     token::{Token, TokenType as TT},
@@ -18,9 +18,24 @@ pub enum ParserError {
     EmptyPrimary(usize),
     EmptyExpression(usize),
     MissingSemicolon(usize),
-    ExpectedVariableName(String, usize),
     InvalidAssignmentTarget(Token, usize),
     MissingClosingBraces(usize),
+    ExpectedXAfterY(TT, String, usize),
+    MaxCallArguments(String, usize),
+}
+
+pub enum FunctionKind {
+    Function,
+}
+
+impl fmt::Display for FunctionKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Function => {
+                write!(f, "Function")
+            }
+        }
+    }
 }
 
 impl fmt::Display for ParserError {
@@ -53,13 +68,11 @@ impl fmt::Display for ParserError {
             ParserError::MissingSemicolon(line) => {
                 write!(f, "Parser Error: Expected semicolon at line {}.", line)?;
             }
-            ParserError::ExpectedVariableName(token, line) => {
-                write!(
-                    f,
-                    "Parser Error: Expected variable after var at line {}, got {}.",
-                    line, token
-                )?;
-            }
+            ParserError::MaxCallArguments(name, line) => write!(
+                f,
+                "Parser Error: Max call arguments achieved on {} at line {}",
+                name, line
+            )?,
             ParserError::InvalidAssignmentTarget(token, line) => {
                 write!(
                     f,
@@ -69,6 +82,13 @@ impl fmt::Display for ParserError {
             }
             ParserError::MissingClosingBraces(line) => {
                 write!(f, "Parser Error: Missing closing braces on line {}.", line)?;
+            }
+            ParserError::ExpectedXAfterY(expected_token_type, term, line) => {
+                write!(
+                    f,
+                    "Parser Error: Expected {} after {} on line {}.",
+                    expected_token_type, term, line
+                )?;
             }
         }
 
@@ -84,9 +104,10 @@ impl ParserError {
             ParserError::EmptyPrimary(line) => line,
             ParserError::EmptyExpression(line) => line,
             ParserError::MissingSemicolon(line) => line,
-            ParserError::ExpectedVariableName(_, line) => line,
             ParserError::InvalidAssignmentTarget(_, line) => line,
             ParserError::MissingClosingBraces(line) => line,
+            ParserError::ExpectedXAfterY(_, _, line) => line,
+            ParserError::MaxCallArguments(_, line) => line,
         }
     }
 }
@@ -147,9 +168,89 @@ impl Parser {
             .expect("Already checked above but for whatever reason if this gets up then idk")
             .token_type
         {
+            TT::Fun => self.function_declaration(FunctionKind::Function),
             TT::Var => self.var_declaration(),
             _ => self.statement(),
         }
+    }
+
+    pub fn function_declaration(&mut self, function_kind: FunctionKind) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::Fun);
+        let fun_token = self.tokens.next().unwrap();
+
+        let name = match self.tokens.peek() {
+            Some(
+                _token @ Token {
+                    token_type: TT::Identifier(_),
+                    ..
+                },
+            ) => self.tokens.next().unwrap(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::Identifier("".to_string()),
+                    "function declaration".to_string(),
+                    fun_token.line,
+                ));
+            }
+        };
+
+        let _consume_left_paren = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::LeftParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::LeftParen,
+                    format!("{function_kind} name"),
+                    fun_token.line,
+                ));
+            }
+        };
+
+        let mut parameters: Vec<Token> = Vec::new();
+        if matches!(self.tokens.peek(), Some(token) if token.token_type != TT::RightParen) {
+            loop {
+                if parameters.len() >= 8 {
+                    return Err(ParserError::MaxCallArguments(name.to_string(), name.line));
+                }
+
+                match self.tokens.peek() {
+                    Some(token) if matches!(token.token_type, TT::Identifier(_)) => {
+                        parameters.push(self.tokens.next().unwrap().clone());
+                    }
+                    _ => {
+                        return Err(ParserError::ExpectedXAfterY(
+                            TT::Identifier("".to_string()),
+                            "arguments".to_string(),
+                            fun_token.line,
+                        ))
+                    }
+                };
+
+                match self.tokens.peek() {
+                    Some(token) if token.token_type == TT::Comma => {
+                        self.tokens.next();
+                    }
+                    _ => break,
+                }
+            }
+        }
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::RightParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::RightParen,
+                    "function arguments".to_string(),
+                    fun_token.line,
+                ));
+            }
+        };
+
+        let body_statements = match self.block_statement()? {
+            Stmt::Block(block_statements) => block_statements,
+            _ => unreachable!(),
+        };
+
+        Ok(Stmt::Function(name, parameters, body_statements))
     }
 
     pub fn var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -177,19 +278,20 @@ impl Parser {
                         _ => Err(ParserError::MissingSemicolon(token.line)),
                     }
                 }
-                _other_token => Err(ParserError::ExpectedVariableName(
-                    _other_token.to_string(),
+                _other_token => Err(ParserError::ExpectedXAfterY(
+                    TT::Identifier("Identifier".to_string()),
+                    var_token.to_string(),
                     var_token.line,
                 )),
             }
         } else {
-            Err(ParserError::ExpectedVariableName(
-                "None".to_string(),
+            Err(ParserError::ExpectedXAfterY(
+                TT::Identifier("Identifier".to_string()),
+                var_token.to_string(),
                 var_token.line,
             ))
         }
     }
-
     pub fn statement(&mut self) -> ParserResult<Stmt> {
         match self
             .tokens
@@ -197,13 +299,186 @@ impl Parser {
             .expect("Already checked above but for whatever reason if this gets up then idk")
             .token_type
         {
+            TT::If => self.if_statement(),
             TT::Print => self.print_statement(),
             TT::LeftBrace => self.block_statement(),
+            TT::While => self.while_statement(),
+            TT::For => self.for_statement(),
+            TT::Return => self.return_statement(),
             _ => self.expr_statement(),
         }
     }
 
+    pub fn return_statement(&mut self) -> ParserResult<Stmt> {
+        let return_keyword = self.tokens.next().unwrap();
+
+        let value = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Semicolon => {
+                self.tokens.next();
+                None
+            }
+            _ => {
+                let expr = self.expression()?;
+
+                match self.tokens.peek() {
+                    Some(token) if token.token_type == TT::Semicolon => {
+                        self.tokens.next();
+                    }
+                    _ => return Err(ParserError::MissingSemicolon(return_keyword.line)),
+                };
+
+                Some(expr)
+            }
+        };
+
+        Ok(Stmt::Return(return_keyword, value))
+    }
+
+    pub fn for_statement(&mut self) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::For);
+        let for_token = self.tokens.next().unwrap();
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::LeftParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::LeftBrace,
+                    for_token.to_string(),
+                    for_token.line,
+                ))
+            }
+        };
+
+        let initializer = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Semicolon => None,
+            Some(token) if token.token_type == TT::Var => Some(self.var_declaration()?),
+            _ => Some(self.expr_statement()?),
+        };
+
+        let condition = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Semicolon => None,
+            _ => Some(self.expression()?),
+        };
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Semicolon => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::Semicolon,
+                    "For loop condition".to_string(),
+                    for_token.line,
+                ))
+            }
+        };
+
+        let increment = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::RightParen => None,
+            _ => Some(self.expression()?),
+        };
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::RightParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::Semicolon,
+                    "For loop increment".to_string(),
+                    for_token.line,
+                ))
+            }
+        };
+
+        let mut body = self.statement()?;
+
+        if let Some(increment) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(increment)]);
+        }
+
+        body = match condition {
+            Some(condition_inner) => Stmt::While(condition_inner, Box::new(body)),
+            None => Stmt::While(Expr::Literal(LiteralValue::Bool(true)), Box::new(body)),
+        };
+
+        if let Some(initializer) = initializer {
+            body = Stmt::Block(vec![initializer, body]);
+        }
+
+        Ok(body)
+    }
+
+    pub fn while_statement(&mut self) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::While);
+        let while_token = self.tokens.next().unwrap();
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::LeftBrace => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::LeftBrace,
+                    while_token.to_string(),
+                    while_token.line,
+                ))
+            }
+        };
+
+        let condition = self.expression()?;
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::RightBrace => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::RightBrace,
+                    "While token condition".to_string(),
+                    while_token.line,
+                ))
+            }
+        };
+
+        let body = self.statement()?;
+
+        Ok(Stmt::While(condition, Box::new(body)))
+    }
+
+    pub fn if_statement(&mut self) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::If);
+        let if_token = self.tokens.next().unwrap();
+
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::LeftParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::LeftParen,
+                    if_token.to_string(),
+                    if_token.line,
+                ))
+            }
+        };
+
+        let condition = self.expression()?;
+        match self.tokens.peek() {
+            Some(token) if token.token_type == TT::RightParen => self.tokens.next(),
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::RightParen,
+                    "If condition".to_string(),
+                    if_token.line,
+                ))
+            }
+        };
+
+        let then_branch = Box::new(self.statement()?);
+        let else_branch = match self.tokens.peek() {
+            Some(token) if token.token_type == TT::Else => {
+                self.tokens.next();
+                Some(Box::new(self.statement()?))
+            }
+            _ => None,
+        };
+
+        Ok(Stmt::If(condition, then_branch, else_branch))
+    }
+
     pub fn block_statement(&mut self) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::LeftBrace);
+
         let mut statements: Vec<Stmt> = Vec::new();
         let _consume_left_brace = self.tokens.next();
 
@@ -224,6 +499,7 @@ impl Parser {
     }
 
     pub fn print_statement(&mut self) -> ParserResult<Stmt> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::Print);
         let _print_token = self.tokens.next().unwrap();
         let value = self.expression()?;
 
@@ -240,16 +516,13 @@ impl Parser {
         let expr = self.expression()?;
 
         match self.tokens.peek() {
-            Some(token) => match token.token_type {
-                TT::Semicolon => {
-                    self.tokens.next();
-                    Ok(Stmt::Expression(expr))
-                }
-
-                _ => match self.mode {
-                    ParserMode::Expression => Ok(Stmt::Expression(expr)),
-                    ParserMode::Statement => Err(ParserError::MissingSemicolon(token.line)),
-                },
+            Some(token) if token.token_type == TT::Semicolon => {
+                self.tokens.next();
+                Ok(Stmt::Expression(expr))
+            }
+            Some(token) => match self.mode {
+                ParserMode::Expression => Ok(Stmt::Expression(expr)),
+                ParserMode::Statement => Err(ParserError::MissingSemicolon(token.line)),
             },
             _ => match self.mode {
                 ParserMode::Expression => Ok(Stmt::Expression(expr)),
@@ -290,7 +563,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> ParserResult<Expr> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
         let peek_token = self.tokens.peek().unwrap();
 
         if matches!(peek_token.token_type, TT::Assignment) {
@@ -312,6 +585,48 @@ impl Parser {
             }
         }
 
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.and()?;
+        while let Some(token) = self.tokens.peek() {
+            if token.token_type == TT::Or {
+                self.prev_token_line = token.line;
+
+                let operator = self.tokens.next().unwrap();
+                let right = self.and()?;
+
+                expr = Expr::Logical(LogicalExpr {
+                    left: Box::new(expr),
+                    right: Box::new(right),
+                    operator,
+                })
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.equality()?;
+        while let Some(token) = self.tokens.peek() {
+            if token.token_type == TT::And {
+                self.prev_token_line = token.line;
+
+                let operator = self.tokens.next().unwrap();
+                let right = self.equality()?;
+
+                expr = Expr::Logical(LogicalExpr {
+                    left: Box::new(expr),
+                    right: Box::new(right),
+                    operator,
+                })
+            } else {
+                break;
+            }
+        }
         Ok(expr)
     }
 
@@ -337,7 +652,7 @@ impl Parser {
 
     fn unary(&mut self) -> ParserResult<Expr> {
         let unary_tokens = [TT::Bang, TT::Minus];
-        let intrem = match self.tokens.peek() {
+        match self.tokens.peek() {
             Some(token) if unary_tokens.contains(&token.token_type) => {
                 // Update prev token.line pointer
                 self.prev_token_line = token.line;
@@ -350,10 +665,71 @@ impl Parser {
                 }))
             }
 
-            _ => self.primary(),
+            _ => self.call(),
+        }
+    }
+
+    fn call(&mut self) -> ParserResult<Expr> {
+        let mut expr = self.primary()?;
+
+        loop {
+            match self.tokens.peek() {
+                Some(token) if token.token_type == TT::LeftParen => {
+                    self.prev_token_line = token.line;
+
+                    let _consume_left_paren = self.tokens.next();
+                    expr = self.finish_call(expr)?;
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> ParserResult<Expr> {
+        let mut arguments = vec![];
+        if matches!(self.tokens.peek(), Some(token) if token.token_type != TT::RightParen) {
+            loop {
+                if arguments.len() >= 255 {
+                    return Err(ParserError::MaxCallArguments(
+                        callee.to_string(),
+                        self.prev_token_line,
+                    ));
+                }
+
+                arguments.push(Box::new(self.expression()?));
+
+                match self.tokens.peek() {
+                    Some(token) if token.token_type == TT::Comma => self.tokens.next(),
+                    _ => break,
+                };
+            }
+        }
+
+        let closing_paren = match self.tokens.next() {
+            Some(token) if token.token_type == TT::RightParen => token,
+            Some(token) => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::RightParen,
+                    "function arguments".to_string(),
+                    token.line,
+                ))
+            }
+            _ => {
+                return Err(ParserError::ExpectedXAfterY(
+                    TT::RightParen,
+                    "function_arguments".to_string(),
+                    self.prev_token_line,
+                ))
+            }
         };
 
-        intrem
+        Ok(Expr::Call(CallExpr {
+            callee: Box::new(callee),
+            closing_paren,
+            arguments,
+        }))
     }
 
     fn primary(&mut self) -> ParserResult<Expr> {

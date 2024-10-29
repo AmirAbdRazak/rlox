@@ -1,21 +1,26 @@
 use crate::syntax::{
-    AssignmentExpr, BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr,
+    AssignmentExpr, BinaryExpr, CallExpr, Expr, Grouping, LiteralValue, LogicalExpr, Stmt,
+    UnaryExpr, VariableExpr,
 };
 use crate::token::{Token, TokenType as TT};
 use crate::visit::MutVisitor;
-use std::borrow::BorrowMut;
+use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::mem::discriminant;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fmt, mem};
 
 pub enum RuntimeError {
     IncompatibleBinaryOperation(Types, Types, TT, usize),
     IncompatibleUnaryOperation(Types, TT, usize),
     NullDivisionError(usize),
-    UndefinedVariable(String, usize),
-    InvalidAssignment(String, usize),
+    UndefinedVariable(TT, usize),
+    InvalidAssignment(TT, usize),
+    ExpectedXFoundY(String, String, usize),
+    NonFunctionReturn(usize),
 }
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -44,11 +49,20 @@ impl fmt::Display for RuntimeError {
             RuntimeError::NullDivisionError(_) => {
                 write!(f, "Division by zero is not supported")?;
             }
-            RuntimeError::UndefinedVariable(var_name, _) => {
-                write!(f, "Undefined Variable : {var_name}")?;
+            RuntimeError::UndefinedVariable(token_type, _) => {
+                write!(f, "Undefined Variable : {token_type}")?;
             }
             RuntimeError::InvalidAssignment(name, _) => {
                 write!(f, "Invalid Assignment: {name}")?;
+            }
+            RuntimeError::ExpectedXFoundY(expected, found, line) => {
+                write!(f, "Expected {expected}, found {found} at line {line}")?;
+            }
+            RuntimeError::NonFunctionReturn(line) => {
+                write!(
+                    f,
+                    "Returns should only be in function scopes, found at line {line}"
+                )?;
             }
         }
         Ok(())
@@ -63,16 +77,18 @@ impl RuntimeError {
             RuntimeError::NullDivisionError(line) => line,
             RuntimeError::UndefinedVariable(_, line) => line,
             RuntimeError::InvalidAssignment(_, line) => line,
+            RuntimeError::ExpectedXFoundY(_, _, line) => line,
+            RuntimeError::NonFunctionReturn(line) => line,
         }
     }
 }
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Environment {
     enclosing: Option<Rc<Environment>>,
-    values: RefCell<HashMap<String, Types>>,
+    values: RefCell<HashMap<TT, Types>>,
 }
 
 impl Environment {
@@ -83,6 +99,17 @@ impl Environment {
         }
     }
 
+    pub fn global() -> Self {
+        let global = Environment::new();
+
+        global.define(
+            &TT::Identifier("clock".to_string()),
+            Types::Callable(Rc::new(Box::new(Clock {}))),
+        );
+
+        global
+    }
+
     pub fn inherit_new(environment: Rc<Environment>) -> Self {
         Self {
             enclosing: Some(environment),
@@ -90,55 +117,53 @@ impl Environment {
         }
     }
 
-    fn extract_identifier(&self, token: &TT) -> String {
-        if let TT::Identifier(name) = token {
-            name.to_string()
-        } else {
-            panic!("Only pass Identifier tokens here")
-        }
+    pub fn define(&self, token_type: &TT, value: Types) {
+        self.values.borrow_mut().insert(token_type.clone(), value);
     }
 
-    pub fn define(&self, token: &Token, value: Types) {
-        let name = self.extract_identifier(&token.token_type);
-        self.values.borrow_mut().insert(name, value);
-    }
-
-    pub fn get(&self, token: &Token) -> RuntimeResult<Types> {
-        let name = self.extract_identifier(&token.token_type);
-        if let Some(value) = self.values.borrow().get(&name) {
+    pub fn get(&self, token_type: &TT, token_line: usize) -> RuntimeResult<Types> {
+        if let Some(value) = self.values.borrow().get(token_type) {
             Ok(value.clone())
         } else if let Some(ref enclosing) = self.enclosing {
-            enclosing.get(token)
+            enclosing.get(token_type, token_line)
         } else {
-            Err(RuntimeError::UndefinedVariable(name, token.line))
+            Err(RuntimeError::UndefinedVariable(
+                token_type.clone(),
+                token_line,
+            ))
         }
     }
 
-    pub fn assign(&self, name_token: &Token, value: Types) -> RuntimeResult<Types> {
-        let name = self.extract_identifier(&name_token.token_type);
-        if self.values.borrow().contains_key(&name) {
-            self.values.borrow_mut().insert(name, value.clone());
+    pub fn assign(&self, token_type: &TT, value: Types, token_line: usize) -> RuntimeResult<Types> {
+        if self.values.borrow().contains_key(token_type) {
+            self.values
+                .borrow_mut()
+                .insert(token_type.clone(), value.clone());
             Ok(value)
         } else if let Some(ref enclosing) = self.enclosing {
-            enclosing.assign(name_token, value)
+            enclosing.assign(token_type, value, token_line)
         } else {
-            Err(RuntimeError::InvalidAssignment(name, name_token.line))
+            Err(RuntimeError::InvalidAssignment(
+                token_type.clone(),
+                token_line,
+            ))
         }
     }
 }
 
 pub struct Interpreter {
-    pub environment: Rc<Environment>,
+    pub globals: Rc<Environment>,
     had_runtime_error: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            environment: Rc::new(Environment::new()),
+            globals: Rc::new(Environment::global()),
             had_runtime_error: false,
         }
     }
+
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
         let mut evals = vec![];
         let mut runtime_errors = vec![];
@@ -146,32 +171,41 @@ impl Interpreter {
         for statement in program {
             match self.visit_statement(statement) {
                 Ok(eval) => evals.push(eval),
-                Err(runtime_error) => {
-                    runtime_errors.push(runtime_error);
-                    self.had_runtime_error = true;
-                    break;
-                }
+                Err(runtime_exception) => match runtime_exception {
+                    RuntimeReturn::Err(runtime_error) => runtime_errors.push(runtime_error),
+                    RuntimeReturn::Return(runtime_token, _) => {
+                        runtime_errors.push(RuntimeError::NonFunctionReturn(runtime_token.line))
+                    }
+                },
             }
         }
 
         (evals, runtime_errors)
     }
-    pub fn execute_block(&mut self, statements: &[Stmt], environment: Environment) {
-        let previous = mem::replace(&mut self.environment, Rc::new(environment));
+    pub fn execute_block(
+        &mut self,
+        statements: &[Stmt],
+        environment: Environment,
+    ) -> Result<Types, RuntimeReturn> {
+        let previous = mem::replace(&mut self.globals, Rc::new(environment));
         for statement in statements {
-            let w = self.visit_statement(statement);
-            if let Err(err) = w {
-                self.had_runtime_error = true;
-                println!("Runtime error: {}", err);
+            if let Err(err) = self.visit_statement(statement) {
+                if let RuntimeReturn::Return(_, _) = err {
+                    self.globals = previous;
+                };
+
+                return Err(err);
             }
         }
-        self.environment = previous;
+        self.globals = previous;
+
+        Ok(Types::Nil)
     }
 }
 
 impl MutVisitor for Interpreter {
     type E = Result<Types, RuntimeError>;
-    type S = Result<Types, RuntimeError>;
+    type S = Result<Types, RuntimeReturn>;
 
     fn visit_expression(&mut self, expr: &Expr) -> Self::E {
         match expr {
@@ -288,14 +322,70 @@ impl MutVisitor for Interpreter {
                 Ok(ret_val)
             }
             Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
-            Expr::Variable(VariableExpr { id: _, ref name }) => self.environment.get(name),
+            Expr::Variable(VariableExpr { id: _, ref name }) => {
+                self.globals.get(&name.token_type, name.line)
+            }
             Expr::Assignment(AssignmentExpr {
                 id: _,
                 ref name,
                 ref expression,
             }) => {
                 let value = self.visit_expression(expression)?;
-                self.environment.assign(name, value)
+                self.globals.assign(&name.token_type, value, name.line)
+            }
+            Expr::Logical(LogicalExpr {
+                ref left,
+                ref operator,
+                ref right,
+            }) => {
+                let left_result = self.visit_expression(left)?;
+
+                if operator.token_type == TT::Or {
+                    if is_truthy(&left_result) {
+                        return Ok(left_result);
+                    }
+                } else {
+                    if !is_truthy(&left_result) {
+                        return Ok(left_result);
+                    }
+                }
+
+                self.visit_expression(right)
+            }
+            Expr::Call(CallExpr {
+                ref callee,
+                ref closing_paren,
+                arguments: ref arg_exprs,
+            }) => {
+                let callee = self.visit_expression(callee)?;
+
+                let mut arguments = vec![];
+                for argument in arg_exprs {
+                    arguments.push(self.visit_expression(argument)?);
+                }
+
+                let function = match callee {
+                    Types::Callable(function) => function,
+                    _ => {
+                        return Err(RuntimeError::ExpectedXFoundY(
+                            "Callable".to_string(),
+                            callee.to_string(),
+                            closing_paren.line,
+                        ))
+                    }
+                };
+
+                let found_len = arguments.len();
+                let expected_len = function.arity();
+                if found_len != expected_len {
+                    return Err(RuntimeError::ExpectedXFoundY(
+                        "{expected_len} arguments".to_string(),
+                        "{found_len}".to_string(),
+                        closing_paren.line,
+                    ));
+                }
+
+                function.call(self, arguments)
             }
         }
     }
@@ -303,11 +393,15 @@ impl MutVisitor for Interpreter {
     fn visit_statement(&mut self, statement: &Stmt) -> Self::S {
         match statement {
             Stmt::Expression(ref expr) => {
-                let evaluation = self.visit_expression(expr)?;
+                let evaluation = self
+                    .visit_expression(expr)
+                    .map_err(|err| RuntimeReturn::Err(err))?;
                 return Ok(evaluation);
             }
             Stmt::Print(ref expr) => {
-                let evaluation = self.visit_expression(expr)?;
+                let evaluation = self
+                    .visit_expression(expr)
+                    .map_err(|err| RuntimeReturn::Err(err))?;
                 if !self.had_runtime_error {
                     println!("{evaluation}");
                 }
@@ -316,27 +410,167 @@ impl MutVisitor for Interpreter {
                 let value = initializer
                     .as_ref()
                     .map(|expr| self.visit_expression(expr))
-                    .transpose()?
+                    .transpose()
+                    .map_err(|err| RuntimeReturn::Err(err))?
                     .unwrap_or(Types::Nil);
 
-                self.environment.borrow_mut().define(token, value)
+                self.globals.borrow_mut().define(&token.token_type, value)
             }
-            Stmt::Block(ref statements) => self.execute_block(
-                statements,
-                Environment::inherit_new(self.environment.clone()),
-            ),
+            Stmt::Block(ref statements) => {
+                self.execute_block(statements, Environment::inherit_new(self.globals.clone()))?;
+            }
+            Stmt::While(ref condition, ref body) => {
+                while is_truthy(
+                    &self
+                        .visit_expression(condition)
+                        .map_err(|err| RuntimeReturn::Err(err))?,
+                ) {
+                    self.visit_statement(body)?;
+                }
+            }
+            Stmt::If(ref condition, ref then_branch, ref else_branch) => {
+                if is_truthy(
+                    &self
+                        .visit_expression(condition)
+                        .map_err(|err| RuntimeReturn::Err(err))?,
+                ) {
+                    self.visit_statement(then_branch)?;
+                } else if let Some(else_branch) = else_branch {
+                    self.visit_statement(else_branch)?;
+                }
+            }
+            Stmt::Function(ref name_token, ref parameters, ref body) => {
+                let callable_fn = Function {
+                    name: name_token.token_type.clone(),
+                    body: body.clone(),
+                    parameters: parameters.clone(),
+                    closure: self.globals.clone(),
+                };
+
+                self.globals.define(
+                    &name_token.token_type,
+                    Types::Callable(Rc::new(Box::new(callable_fn))),
+                );
+            }
+            Stmt::Return(keyword, value) => {
+                return Err(RuntimeReturn::Return(
+                    keyword.clone(),
+                    match value {
+                        Some(expr) => self
+                            .visit_expression(expr)
+                            .map_err(|err| RuntimeReturn::Err(err))?,
+                        None => Types::Nil,
+                    },
+                ));
+            }
         }
 
         Ok(Types::Nil)
     }
 }
 
-#[derive(Clone)]
+pub enum RuntimeReturn {
+    Err(RuntimeError),
+    Return(Token, Types),
+}
+
+impl fmt::Display for RuntimeReturn {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            RuntimeReturn::Err(err) => write!(f, "<Runtime Error {}>", err),
+            RuntimeReturn::Return(_, return_value) => {
+                write!(f, "<Runtime Return {}>", return_value)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Types {
     Number(f32),
     LoxString(String),
     Boolean(bool),
+    Callable(Rc<Box<dyn Callable>>),
     Nil,
+}
+
+#[derive(Debug)]
+pub struct Clock {}
+
+#[derive(Debug)]
+pub struct Function {
+    name: TT,
+    parameters: Vec<Token>,
+    body: Vec<Stmt>,
+    closure: Rc<Environment>,
+}
+
+impl Function {
+    fn bind(&self, instance: Types, name: &TT) -> Function {
+        let environment = Environment::global();
+        environment.define(&TT::This, instance);
+
+        Function {
+            name: name.clone(),
+            parameters: self.parameters.clone(),
+            body: self.body.clone(),
+            closure: Rc::new(environment),
+        }
+    }
+}
+
+impl Callable for Function {
+    fn arity(&self) -> usize {
+        self.parameters.len()
+    }
+
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        mut arguments: Vec<Types>,
+    ) -> RuntimeResult<Types> {
+        let environment = Environment::global();
+
+        for (i, arg) in arguments.drain(..).enumerate() {
+            environment.define(&self.parameters[i].token_type, arg);
+        }
+
+        match interpreter.execute_block(&self.body, environment) {
+            Ok(value) | Err(RuntimeReturn::Return(_, value)) => Ok(value),
+            Err(RuntimeReturn::Err(err)) => Err(err),
+        }
+    }
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "<fn {}>", self.name)
+    }
+}
+
+impl Callable for Clock {
+    fn arity(&self) -> usize {
+        0
+    }
+
+    fn call(&self, _: &mut Interpreter, __: Vec<Types>) -> RuntimeResult<Types> {
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Ok(Types::Number(time as f32))
+    }
+}
+
+impl fmt::Display for Clock {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Native Clock Function")
+    }
+}
+
+pub trait Callable: Debug + fmt::Display {
+    fn arity(&self) -> usize;
+    fn call(&self, interpreter: &mut Interpreter, _: Vec<Types>) -> RuntimeResult<Types>;
 }
 
 impl std::fmt::Display for Types {
@@ -346,11 +580,12 @@ impl std::fmt::Display for Types {
             &Types::LoxString(ref s) => write!(f, "{}", s.to_string()),
             &Types::Nil => write!(f, "nil"),
             &Types::Number(n) => write!(f, "{}", n),
+            &Types::Callable(ref c) => write!(f, "{}", c),
         }
     }
 }
 
-fn _is_truthy(expression_return: &Types) -> bool {
+fn is_truthy(expression_return: &Types) -> bool {
     match expression_return {
         &Types::Nil | &Types::Boolean(false) => false,
         _ => true,

@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -57,16 +57,20 @@ impl TokenType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token {
     pub token_type: TokenType,
     pub line: usize,
 }
 
 impl Token {
-    pub fn _new(token_type: TokenType, line: usize) -> Token {
-        Token { token_type, line }
+    pub fn new_static_identifier(name: &'static str) -> Token {
+        Token {
+            token_type: TokenType::Identifier(name.to_string()),
+            line: 0,
+        }
     }
+
     pub fn token_type_name(&self) -> String {
         format!("{:?}", self.token_type).chars().enumerate().fold(
             String::new(),
@@ -92,10 +96,10 @@ impl fmt::Display for Token {
                     write!(f, "NUMBER {} {}", n, parsed_n)?
                 }
             }
-            TokenType::LoxString(ref s) => write!(f, "STRING \"{}\" {}", s, s)?,
-            TokenType::Identifier(ref i) => write!(f, "IDENTIFIER {} null", i)?,
+            TokenType::LoxString(ref s) => write!(f, "str \"{}\" {}", s, s)?,
+            TokenType::Identifier(ref i) => write!(f, "<ident {}>", i)?,
             TokenType::Assignment => write!(f, "EQUAL = null")?,
-            _ => write!(f, "{} {} null", self.token_type_name(), self.token_type)?,
+            _ => write!(f, "<{}>", self.token_type)?,
         };
         Ok(())
     }

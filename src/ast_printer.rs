@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    syntax::{BinaryExpr, Expr, Grouping, Stmt, UnaryExpr},
+    syntax::{BinaryExpr, CallExpr, Expr, Grouping, LogicalExpr, Stmt, UnaryExpr},
     visit::Visitor,
 };
 
@@ -20,7 +20,7 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 right: right_expr,
                 operator,
             }) => format!(
-                "({} {} {})",
+                "(Binary {} {} {})",
                 operator.token_type,
                 self.visit_expression(left_expr),
                 self.visit_expression(right_expr)
@@ -29,18 +29,40 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 operator,
                 right: right_expr,
             }) => format!(
-                "({} {})",
+                "(Unary {} {})",
                 operator.token_type,
                 self.visit_expression(right_expr)
             ),
             Expr::Grouping(Grouping { expression: expr }) => {
                 format!("(group {})", self.visit_expression(expr))
             }
-            Expr::Literal(literal_value) => format!("{}", literal_value),
-            Expr::Variable(variable) => format!("{}", variable.name),
+            Expr::Literal(literal_value) => format!("(Literal {})", literal_value),
+            Expr::Variable(variable) => format!("(Variable {})", variable.name),
             Expr::Assignment(assignment) => {
-                format!("{} = {}", assignment.name, assignment.expression)
+                format!(
+                    "(Assignment {} = {})",
+                    assignment.name, assignment.expression
+                )
             }
+            Expr::Logical(LogicalExpr {
+                left: left_expr,
+                right: right_expr,
+                operator,
+            }) => format!(
+                "(Logical {} {} {})",
+                operator.token_type,
+                self.visit_expression(left_expr),
+                self.visit_expression(right_expr)
+            ),
+            Expr::Call(CallExpr {
+                ref callee,
+                ref arguments,
+                ..
+            }) => format!(
+                "(Callable <callee {}> <arguments {}>)",
+                callee.to_string(),
+                arguments.iter().map(|t| t.to_string()).collect::<String>()
+            ),
         }
     }
 
@@ -64,6 +86,37 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                     .map(|s| self.visit_statement(s))
                     .collect::<String>()
             ),
+            Stmt::If(ref conditional, ref then_stmt, ref else_stmt) => format!(
+                "(If Statement {} {} {})",
+                self.visit_expression(conditional),
+                self.visit_statement(then_stmt),
+                match else_stmt {
+                    &Some(ref inner_else) => self.visit_statement(inner_else),
+                    &None => String::from(""),
+                }
+            ),
+            Stmt::While(ref conditional, ref body) => format!(
+                "(If Statement {} {} )",
+                self.visit_expression(conditional),
+                self.visit_statement(body),
+            ),
+            Stmt::Function(ref name, ref params, ref body) => format!(
+                "(Function {} {}) -> {}",
+                name,
+                params.iter().map(|t| t.to_string()).collect::<String>(),
+                body.iter()
+                    .map(|s| self.visit_statement(s))
+                    .collect::<String>()
+            ),
+            Stmt::Return(ref _keyword, ref value) => {
+                format!(
+                    "<Return {}>",
+                    match value {
+                        Some(expr) => self.visit_expression(expr),
+                        _ => "Nil".to_string(),
+                    }
+                )
+            }
         }
     }
 }

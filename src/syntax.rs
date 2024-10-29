@@ -2,59 +2,53 @@ use std::fmt;
 
 use crate::{ast_printer::ASTStringVisitor, token::Token};
 
-// #[derive(Debug, Clone)]
-// pub enum UnaryOperator {
-//     Bang,
-//     Minus,
-// }
-//
-// #[derive(Debug, Clone)]
-// pub enum BinaryOperator {
-//     Minus,
-//     Plus,
-//     Slash,
-//     Star,
-//     Equal,
-//     NotEqual,
-//     Less,
-//     LessEqual,
-//     Greater,
-//     GreaterEqual,
-// }
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct BinaryExpr {
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Grouping {
     pub expression: Box<Expr>,
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct UnaryExpr {
     pub operator: Token,
     pub right: Box<Expr>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum LiteralValue {
     Float(String),
     LoxString(String),
     Bool(bool),
     None,
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct VariableExpr {
     pub id: usize,
     pub name: Token,
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct AssignmentExpr {
     pub id: usize,
     pub name: Token,
     pub expression: Box<Expr>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct LogicalExpr {
+    pub left: Box<Expr>,
+    pub operator: Token,
+    pub right: Box<Expr>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct CallExpr {
+    pub callee: Box<Expr>,
+    pub closing_paren: Token,
+    pub arguments: Vec<Box<Expr>>,
 }
 
 impl fmt::Display for LiteralValue {
@@ -91,7 +85,7 @@ impl From<bool> for LiteralValue {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Expr {
     Binary(BinaryExpr),
     Grouping(Grouping),
@@ -99,14 +93,20 @@ pub enum Expr {
     Unary(UnaryExpr),
     Variable(VariableExpr),
     Assignment(AssignmentExpr),
+    Logical(LogicalExpr),
+    Call(CallExpr),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),
     VariableDeclaration(Token, Option<Expr>),
     Block(Vec<Stmt>),
+    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
+    Function(Token, Vec<Token>, Vec<Stmt>),
+    Return(Token, Option<Expr>),
 }
 
 impl fmt::Display for Expr {
