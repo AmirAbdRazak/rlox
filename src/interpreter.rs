@@ -1,10 +1,10 @@
 use crate::syntax::{
-    AssignmentExpr, BinaryExpr, CallExpr, Expr, Grouping, LiteralValue, LogicalExpr, Stmt,
-    UnaryExpr, VariableExpr,
+    AssignmentExpr, BinaryExpr, CallExpr, Expr, Grouping, LambdaExpr, LiteralValue, LogicalExpr,
+    Stmt, UnaryExpr, VariableExpr,
 };
 use crate::token::{Token, TokenType as TT};
 use crate::visit::MutVisitor;
-use std::borrow::{Borrow, BorrowMut};
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -387,6 +387,15 @@ impl MutVisitor for Interpreter {
 
                 function.call(self, arguments)
             }
+            Expr::Lambda(lambda) => {
+                let lambda = Function {
+                    name: None,
+                    lambda: lambda.clone(),
+                    closure: self.globals.clone(),
+                };
+
+                Ok(Types::Callable(Rc::new(Box::new(lambda))))
+            }
         }
     }
 
@@ -439,11 +448,10 @@ impl MutVisitor for Interpreter {
                     self.visit_statement(else_branch)?;
                 }
             }
-            Stmt::Function(ref name_token, ref parameters, ref body) => {
+            Stmt::Function(ref name_token, lambda) => {
                 let callable_fn = Function {
-                    name: name_token.token_type.clone(),
-                    body: body.clone(),
-                    parameters: parameters.clone(),
+                    name: Some(name_token.token_type.clone()),
+                    lambda: lambda.clone(),
                     closure: self.globals.clone(),
                 };
 
@@ -499,21 +507,19 @@ pub struct Clock {}
 
 #[derive(Debug)]
 pub struct Function {
-    name: TT,
-    parameters: Vec<Token>,
-    body: Vec<Stmt>,
+    name: Option<TT>,
+    lambda: Rc<LambdaExpr>,
     closure: Rc<Environment>,
 }
 
 impl Function {
-    fn bind(&self, instance: Types, name: &TT) -> Function {
+    fn _bind(&self, instance: Types, name: &TT) -> Function {
         let environment = Environment::global();
         environment.define(&TT::This, instance);
 
         Function {
-            name: name.clone(),
-            parameters: self.parameters.clone(),
-            body: self.body.clone(),
+            name: Some(name.clone()),
+            lambda: self.lambda.clone(),
             closure: Rc::new(environment),
         }
     }
@@ -521,7 +527,7 @@ impl Function {
 
 impl Callable for Function {
     fn arity(&self) -> usize {
-        self.parameters.len()
+        self.lambda.parameters.len()
     }
 
     fn call(
@@ -532,10 +538,10 @@ impl Callable for Function {
         let environment = Environment::inherit_new(self.closure.clone());
 
         for (i, arg) in arguments.drain(..).enumerate() {
-            environment.define(&self.parameters[i].token_type, arg);
+            environment.define(&self.lambda.parameters[i].token_type, arg);
         }
 
-        match interpreter.execute_block(&self.body, environment) {
+        match interpreter.execute_block(&self.lambda.body, environment) {
             Ok(value) | Err(RuntimeReturn::Return(_, value)) => Ok(value),
             Err(RuntimeReturn::Err(err)) => Err(err),
         }
@@ -544,7 +550,14 @@ impl Callable for Function {
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "<fn {}>", self.name)
+        write!(
+            f,
+            "<fn {}>",
+            match self.name {
+                Some(ref token) => token.to_string(),
+                None => "anonymous".to_string(),
+            }
+        )
     }
 }
 

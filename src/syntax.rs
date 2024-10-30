@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 use crate::{ast_printer::ASTStringVisitor, token::Token};
 
@@ -51,6 +51,28 @@ pub struct CallExpr {
     pub arguments: Vec<Box<Expr>>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct LambdaExpr {
+    pub parameters: Vec<Token>,
+    pub body: Vec<Stmt>,
+}
+
+impl fmt::Display for LambdaExpr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "<function {}> -> {}",
+            self.parameters
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<String>(),
+            self.body.iter().map(|s| s.to_string()).collect::<String>()
+        )?;
+
+        Ok(())
+    }
+}
+
 impl fmt::Display for LiteralValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = match self {
@@ -95,6 +117,7 @@ pub enum Expr {
     Assignment(AssignmentExpr),
     Logical(LogicalExpr),
     Call(CallExpr),
+    Lambda(Rc<LambdaExpr>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -105,7 +128,7 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
-    Function(Token, Vec<Token>, Vec<Stmt>),
+    Function(Token, Rc<LambdaExpr>),
     Return(Token, Option<Expr>),
 }
 

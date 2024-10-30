@@ -242,6 +242,7 @@ impl<'a> Scanner<'a> {
             '+' => self.simple_token(Plus),
             ';' => self.simple_token(Semicolon),
             '*' => self.simple_token(Star),
+            '|' => self.simple_token(Pipe),
 
             '!' => self.scan_operator(Bang, BangEqual),
             '=' => self.scan_operator(Assignment, EqualEqual),

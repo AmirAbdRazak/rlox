@@ -1,8 +1,9 @@
 use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
+use std::rc::Rc;
 
-use crate::syntax::{AssignmentExpr, CallExpr, LogicalExpr};
+use crate::syntax::{AssignmentExpr, CallExpr, LambdaExpr, LogicalExpr};
 use crate::{
     syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr},
     token::{Token, TokenType as TT},
@@ -12,6 +13,7 @@ type BoxIterToken = Box<dyn Iterator<Item = Token>>;
 type TokenPeekable = Peekable<BoxIterToken>;
 type ParserResult<T> = Result<T, ParserError>;
 
+#[derive(Debug)]
 pub enum ParserError {
     UnterminatedParentheses(usize, usize),
     NonPrimaryToken(Token),
@@ -194,22 +196,41 @@ impl Parser {
             }
         };
 
-        let _consume_left_paren = match self.tokens.peek() {
-            Some(token) if token.token_type == TT::LeftParen => self.tokens.next(),
+        let body = self.function_body(function_kind, Some(&name), false)?;
+        Ok(Stmt::Function(name, Rc::new(body)))
+    }
+
+    pub fn function_body(
+        &mut self,
+        function_kind: FunctionKind,
+        name: Option<&Token>,
+        is_lambda: bool,
+    ) -> ParserResult<LambdaExpr> {
+        let left_hand = if is_lambda { TT::Pipe } else { TT::LeftParen };
+        let right_hand = if is_lambda { TT::Pipe } else { TT::RightParen };
+
+        let left_hand_token = match self.tokens.peek() {
+            Some(token) if token.token_type == left_hand => self.tokens.next().unwrap(),
             _ => {
                 return Err(ParserError::ExpectedXAfterY(
-                    TT::LeftParen,
+                    left_hand,
                     format!("{function_kind} name"),
-                    fun_token.line,
+                    self.prev_token_line,
                 ));
             }
         };
 
         let mut parameters: Vec<Token> = Vec::new();
-        if matches!(self.tokens.peek(), Some(token) if token.token_type != TT::RightParen) {
+        if matches!(self.tokens.peek(), Some(token) if token.token_type != right_hand) {
             loop {
                 if parameters.len() >= 8 {
-                    return Err(ParserError::MaxCallArguments(name.to_string(), name.line));
+                    return Err(match name {
+                        Some(token) => ParserError::MaxCallArguments(token.to_string(), token.line),
+                        None => ParserError::MaxCallArguments(
+                            "anonymous function".to_string(),
+                            left_hand_token.line,
+                        ),
+                    });
                 }
 
                 match self.tokens.peek() {
@@ -220,7 +241,7 @@ impl Parser {
                         return Err(ParserError::ExpectedXAfterY(
                             TT::Identifier("".to_string()),
                             "arguments".to_string(),
-                            fun_token.line,
+                            left_hand_token.line,
                         ))
                     }
                 };
@@ -235,22 +256,22 @@ impl Parser {
         }
 
         match self.tokens.peek() {
-            Some(token) if token.token_type == TT::RightParen => self.tokens.next(),
+            Some(token) if token.token_type == right_hand => self.tokens.next(),
             _ => {
                 return Err(ParserError::ExpectedXAfterY(
-                    TT::RightParen,
+                    right_hand,
                     "function arguments".to_string(),
-                    fun_token.line,
+                    left_hand_token.line,
                 ));
             }
         };
 
-        let body_statements = match self.block_statement()? {
+        let body = match self.block_statement()? {
             Stmt::Block(block_statements) => block_statements,
             _ => unreachable!(),
         };
 
-        Ok(Stmt::Function(name, parameters, body_statements))
+        Ok(LambdaExpr { parameters, body })
     }
 
     pub fn var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -732,6 +753,16 @@ impl Parser {
         }))
     }
 
+    fn lambda(&mut self) -> ParserResult<Expr> {
+        assert_eq!(self.tokens.peek().unwrap().token_type, TT::Pipe);
+
+        Ok(Expr::Lambda(Rc::new(self.function_body(
+            FunctionKind::Function,
+            None,
+            true,
+        )?)))
+    }
+
     fn primary(&mut self) -> ParserResult<Expr> {
         if let Some(peek_token) = self.tokens.peek() {
             self.prev_token_line = peek_token.line;
@@ -783,6 +814,7 @@ impl Parser {
                     let lox_string = borrowed_str.clone();
                     self.consume_and_cast_literal(lox_string.into())
                 }
+                TT::Pipe => self.lambda(),
                 TT::Identifier(_) => {
                     let identifier_token = self.tokens.next().unwrap();
                     let new_id = self.new_id();

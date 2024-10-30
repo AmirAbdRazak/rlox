@@ -63,6 +63,21 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 callee.to_string(),
                 arguments.iter().map(|t| t.to_string()).collect::<String>()
             ),
+            Expr::Lambda(lambda) => {
+                format!(
+                    "(Lambda {}) -> {}",
+                    lambda
+                        .parameters
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect::<String>(),
+                    lambda
+                        .body
+                        .iter()
+                        .map(|s| self.visit_statement(s))
+                        .collect::<String>()
+                )
+            }
         }
     }
 
@@ -100,14 +115,9 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                 self.visit_expression(conditional),
                 self.visit_statement(body),
             ),
-            Stmt::Function(ref name, ref params, ref body) => format!(
-                "(Function {} {}) -> {}",
-                name,
-                params.iter().map(|t| t.to_string()).collect::<String>(),
-                body.iter()
-                    .map(|s| self.visit_statement(s))
-                    .collect::<String>()
-            ),
+            Stmt::Function(ref name, ref function) => {
+                format!("<Function {} -> {}>", name, function)
+            }
             Stmt::Return(ref _keyword, ref value) => {
                 format!(
                     "<Return {}>",
