@@ -128,21 +128,9 @@ impl Environment {
 
     pub fn ancestor(&self, distance: usize) -> Option<Rc<Environment>> {
         let mut env = self.enclosing.as_ref().unwrap().clone();
-        println!(
-            "Parent 1 {} @ distance 0",
-            hashmap_to_string(&env.values.borrow())
-        );
-        for i in 1..distance {
-            println!(
-                "Parent 1 {} @ distance {i}",
-                hashmap_to_string(&env.values.borrow())
-            );
+        for _ in 1..distance {
             env = env.enclosing.as_ref()?.clone();
         }
-        println!(
-            "Search ENV {} @ distance {distance}",
-            hashmap_to_string(&env.values.borrow())
-        );
 
         Some(env)
     }
@@ -157,7 +145,6 @@ impl Environment {
         } else if let Some(ref enclosing) = self.enclosing {
             enclosing.get(token)
         } else {
-            println!("this is the last thing it hits");
             Err(RuntimeError::UndefinedVariable(
                 token.token_type.clone(),
                 token.line,
@@ -165,7 +152,6 @@ impl Environment {
         }
     }
     pub fn get_at(&self, distance: usize, name_token: &Token) -> RuntimeResult<Types> {
-        println!("token {name_token} @ distance {distance}");
         if distance == 0 {
             return self.get(&name_token);
         }
@@ -204,7 +190,6 @@ impl Environment {
         }
 
         if let Some(ancestor_env) = self.ancestor(distance) {
-            println!("assigning name_token {name_token} @ distance {distance}");
             return ancestor_env.assign(name_token, value);
         }
 
@@ -232,9 +217,7 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
-        println!("=== Resolving Local for expr {} @ depth {}", expr, depth);
         self.locals.insert(expr, depth);
-        println!("=== Now Locals is {}", hashmap_to_string(&self.locals));
     }
 
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
@@ -396,17 +379,7 @@ impl MutVisitor for Interpreter {
             }
             Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
             Expr::Variable(VariableExpr { ref name }) => match self.locals.get(expr) {
-                Some(distance) => {
-                    println!(
-                        "Working env {} @ distance {distance}",
-                        hashmap_to_string(&self.working_env.values.borrow())
-                    );
-                    println!(
-                        "Global env {} @ distance {distance}",
-                        hashmap_to_string(&self.global_env.values.borrow())
-                    );
-                    self.working_env.get_at(*distance, name)
-                }
+                Some(distance) => self.working_env.get_at(*distance, name),
                 None => self.global_env.get(name),
             },
             Expr::Assignment(AssignmentExpr {
