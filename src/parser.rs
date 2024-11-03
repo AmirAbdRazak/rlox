@@ -1,8 +1,9 @@
+use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
 use std::rc::Rc;
 
-use crate::syntax::{AssignmentExpr, CallExpr, LambdaExpr, LogicalExpr};
+use crate::syntax::{AssignmentExpr, CallExpr, LambdaExpr, LiteralExpr, LogicalExpr};
 use crate::{
     syntax::{BinaryExpr, Expr, Grouping, LiteralValue, Stmt, UnaryExpr, VariableExpr},
     token::{Token, TokenType as TT},
@@ -121,6 +122,7 @@ pub enum ParserMode {
 pub struct Parser {
     tokens: TokenPeekable,
     prev_token_line: usize,
+    id: Cell<usize>,
     mode: ParserMode,
 }
 
@@ -130,8 +132,15 @@ impl Parser {
         Parser {
             tokens: iter_tokens.peekable(),
             prev_token_line: 0,
+            id: Cell::new(0),
             mode,
         }
+    }
+
+    pub fn new_id(&self) -> usize {
+        let new_id = self.id.get();
+        self.id.set(new_id + 1);
+        new_id
     }
 
     pub fn parse(&mut self) -> (Vec<Stmt>, Vec<ParserError>) {
@@ -263,7 +272,11 @@ impl Parser {
             _ => unreachable!(),
         };
 
-        Ok(LambdaExpr { parameters, body })
+        Ok(LambdaExpr {
+            id: self.new_id(),
+            parameters,
+            body,
+        })
     }
 
     pub fn var_declaration(&mut self) -> ParserResult<Stmt> {
@@ -411,7 +424,13 @@ impl Parser {
 
         body = match condition {
             Some(condition_inner) => Stmt::While(condition_inner, Box::new(body)),
-            None => Stmt::While(Expr::Literal(LiteralValue::Bool(true)), Box::new(body)),
+            None => Stmt::While(
+                Expr::Literal(LiteralExpr {
+                    id: self.new_id(),
+                    literal: LiteralValue::Bool(true),
+                }),
+                Box::new(body),
+            ),
         };
 
         if let Some(initializer) = initializer {
@@ -562,6 +581,7 @@ impl Parser {
                 let operator = self.tokens.next().unwrap();
                 let right = expr_fn(self)?;
                 expr = Expr::Binary(BinaryExpr {
+                    id: self.new_id(),
                     left: Box::new(expr),
                     right: Box::new(right),
                     operator,
@@ -590,8 +610,9 @@ impl Parser {
             let right = self.assignment()?;
 
             match expr {
-                Expr::Variable(VariableExpr { ref name }) => {
+                Expr::Variable(VariableExpr { ref name, .. }) => {
                     return Ok(Expr::Assignment(AssignmentExpr {
+                        id: self.new_id(),
                         name: name.clone(),
                         expression: Box::new(right),
                     }));
@@ -613,6 +634,7 @@ impl Parser {
                 let right = self.and()?;
 
                 expr = Expr::Logical(LogicalExpr {
+                    id: self.new_id(),
                     left: Box::new(expr),
                     right: Box::new(right),
                     operator,
@@ -634,6 +656,7 @@ impl Parser {
                 let right = self.equality()?;
 
                 expr = Expr::Logical(LogicalExpr {
+                    id: self.new_id(),
                     left: Box::new(expr),
                     right: Box::new(right),
                     operator,
@@ -675,6 +698,7 @@ impl Parser {
                 let operator = self.tokens.next().unwrap();
                 let right = self.unary()?;
                 Ok(Expr::Unary(UnaryExpr {
+                    id: self.new_id(),
                     right: Box::new(right),
                     operator,
                 }))
@@ -741,6 +765,7 @@ impl Parser {
         };
 
         Ok(Expr::Call(CallExpr {
+            id: self.new_id(),
             callee: Box::new(callee),
             closing_paren,
             arguments,
@@ -787,6 +812,7 @@ impl Parser {
                         .token_type
                     {
                         TT::RightParen => Ok(Expr::Grouping(Grouping {
+                            id: self.new_id(),
                             expression: Box::new(expr),
                         })),
                         _token => Err(ParserError::UnterminatedParentheses(
@@ -812,6 +838,7 @@ impl Parser {
                 TT::Identifier(_) => {
                     let identifier_token = self.tokens.next().unwrap();
                     Ok(Expr::Variable(VariableExpr {
+                        id: self.new_id(),
                         name: identifier_token,
                     }))
                 }
@@ -827,7 +854,10 @@ impl Parser {
 
     fn consume_and_cast_literal(&mut self, literal_value: LiteralValue) -> ParserResult<Expr> {
         self.tokens.next();
-        Ok(Expr::Literal(literal_value))
+        Ok(Expr::Literal(LiteralExpr {
+            id: self.new_id(),
+            literal: literal_value,
+        }))
     }
 
     fn synchronize(&mut self) {

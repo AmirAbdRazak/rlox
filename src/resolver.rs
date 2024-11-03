@@ -8,7 +8,6 @@ use crate::{
     interpreter::Interpreter,
     syntax::{Expr, LambdaExpr, Stmt},
     token::{Token, TokenType},
-    utils::hashmap_to_string,
     visit::MutVisitor,
 };
 
@@ -118,7 +117,6 @@ impl<'main> Resolver<'main> {
     }
 
     fn declare(&mut self, name_token: &Token) -> ResolverResult<()> {
-        let len = self.scopes.len();
         let current_scope = match self.scopes.last_mut() {
             Some(scope) => scope,
             None => return Ok(()),

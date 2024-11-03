@@ -1,9 +1,5 @@
-use crate::syntax::{
-    AssignmentExpr, BinaryExpr, CallExpr, Expr, Grouping, LambdaExpr, LiteralValue, LogicalExpr,
-    Stmt, UnaryExpr, VariableExpr,
-};
+use crate::syntax::{Expr, LambdaExpr, LiteralValue, Stmt};
 use crate::token::{Token, TokenType as TT};
-use crate::utils::hashmap_to_string;
 use crate::visit::MutVisitor;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
@@ -201,7 +197,7 @@ pub struct Interpreter {
     pub global_env: Rc<Environment>,
     pub working_env: Rc<Environment>,
     had_runtime_error: bool,
-    pub locals: HashMap<Expr, usize>,
+    pub locals: HashMap<usize, usize>,
 }
 
 impl Interpreter {
@@ -217,7 +213,7 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
-        self.locals.entry(expr.clone()).or_insert(depth);
+        self.locals.entry(expr.get_id()).or_insert(depth);
     }
 
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
@@ -265,22 +261,18 @@ impl MutVisitor for Interpreter {
 
     fn visit_expression(&mut self, expr: &Expr) -> Self::E {
         match expr {
-            Expr::Binary(BinaryExpr {
-                left: ref left_expr,
-                ref operator,
-                right: ref right_expr,
-            }) => {
-                let right = self.visit_expression(right_expr)?;
-                let left = self.visit_expression(left_expr)?;
+            Expr::Binary(binary_expr) => {
+                let right = self.visit_expression(&binary_expr.right)?;
+                let left = self.visit_expression(&binary_expr.left)?;
 
                 let error = RuntimeError::IncompatibleBinaryOperation(
                     left.clone(),
                     right.clone(),
-                    operator.token_type.clone(),
-                    operator.line,
+                    binary_expr.operator.token_type.clone(),
+                    binary_expr.operator.line,
                 );
 
-                match (&left, &operator.token_type, &right) {
+                match (&left, &binary_expr.operator.token_type, &right) {
                     (left, token_type, right)
                         if discriminant(left) != discriminant(right)
                             && TT::equality_tokens().contains(token_type) =>
@@ -319,7 +311,7 @@ impl MutVisitor for Interpreter {
                             TT::Star => Ok(Types::Number(left_n * right_n)),
                             TT::Slash => {
                                 if right_n == 0.0 {
-                                    Err(RuntimeError::NullDivisionError(operator.line))
+                                    Err(RuntimeError::NullDivisionError(binary_expr.operator.line))
                                 } else {
                                     Ok(Types::Number(left_n / right_n))
                                 }
@@ -349,13 +341,10 @@ impl MutVisitor for Interpreter {
                     _ => Err(error),
                 }
             }
-            Expr::Unary(UnaryExpr {
-                operator,
-                right: right_expr,
-            }) => {
-                let right = self.visit_expression(right_expr)?;
+            Expr::Unary(unary_expr) => {
+                let right = self.visit_expression(&unary_expr.right)?;
 
-                match (&right, &operator.token_type) {
+                match (&right, &unary_expr.operator.token_type) {
                     (Types::Number(n), &TT::Minus) => Ok(Types::Number(-n)),
                     (Types::Nil, &TT::Bang) | (Types::Boolean(false), TT::Bang) => {
                         Ok(Types::Boolean(true))
@@ -363,13 +352,13 @@ impl MutVisitor for Interpreter {
                     (_, &TT::Bang) => Ok(Types::Boolean(false)),
                     _ => Err(RuntimeError::IncompatibleUnaryOperation(
                         right,
-                        operator.token_type.clone(),
-                        operator.line,
+                        unary_expr.operator.token_type.clone(),
+                        unary_expr.operator.line,
                     )),
                 }
             }
-            Expr::Literal(lit_val) => {
-                let ret_val = match lit_val {
+            Expr::Literal(literal_expr) => {
+                let ret_val = match &literal_expr.literal {
                     LiteralValue::Bool(val) => Types::Boolean(*val),
                     LiteralValue::Float(val) => Types::Number(val.parse().unwrap()),
                     LiteralValue::LoxString(val) => Types::LoxString(val.clone()),
@@ -377,29 +366,25 @@ impl MutVisitor for Interpreter {
                 };
                 Ok(ret_val)
             }
-            Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
-            Expr::Variable(VariableExpr { ref name }) => match self.locals.get(expr) {
-                Some(distance) => self.working_env.get_at(*distance, name),
-                None => self.global_env.get(name),
+            Expr::Grouping(grouping_expr) => self.visit_expression(&grouping_expr.expression),
+            Expr::Variable(variable_expr) => match self.locals.get(&variable_expr.id) {
+                Some(distance) => self.working_env.get_at(*distance, &variable_expr.name),
+                None => self.global_env.get(&variable_expr.name),
             },
-            Expr::Assignment(AssignmentExpr {
-                ref name,
-                ref expression,
-            }) => {
-                let value = self.visit_expression(expression)?;
-                match self.locals.get(expr) {
-                    Some(distance) => self.working_env.assign_at(*distance, name, value),
-                    None => self.global_env.assign(name, value),
+            Expr::Assignment(assignment_expr) => {
+                let value = self.visit_expression(&assignment_expr.expression)?;
+                match self.locals.get(&assignment_expr.id) {
+                    Some(distance) => {
+                        self.working_env
+                            .assign_at(*distance, &assignment_expr.name, value)
+                    }
+                    None => self.global_env.assign(&assignment_expr.name, value),
                 }
             }
-            Expr::Logical(LogicalExpr {
-                ref left,
-                ref operator,
-                ref right,
-            }) => {
-                let left_result = self.visit_expression(left)?;
+            Expr::Logical(logical_expr) => {
+                let left_result = self.visit_expression(&logical_expr.left)?;
 
-                if operator.token_type == TT::Or {
+                if logical_expr.operator.token_type == TT::Or {
                     if is_truthy(&left_result) {
                         return Ok(left_result);
                     }
@@ -409,17 +394,13 @@ impl MutVisitor for Interpreter {
                     }
                 }
 
-                self.visit_expression(right)
+                self.visit_expression(&logical_expr.right)
             }
-            Expr::Call(CallExpr {
-                ref callee,
-                ref closing_paren,
-                arguments: ref arg_exprs,
-            }) => {
-                let callee = self.visit_expression(callee)?;
+            Expr::Call(call_expr) => {
+                let callee = self.visit_expression(&call_expr.callee)?;
 
                 let mut arguments = vec![];
-                for argument in arg_exprs {
+                for argument in &call_expr.arguments {
                     arguments.push(self.visit_expression(argument)?);
                 }
 
@@ -429,7 +410,7 @@ impl MutVisitor for Interpreter {
                         return Err(RuntimeError::ExpectedXFoundY(
                             "Callable".to_string(),
                             callee.to_string(),
-                            closing_paren.line,
+                            call_expr.closing_paren.line,
                         ))
                     }
                 };
@@ -440,7 +421,7 @@ impl MutVisitor for Interpreter {
                     return Err(RuntimeError::ExpectedXFoundY(
                         "{expected_len} arguments".to_string(),
                         "{found_len}".to_string(),
-                        closing_paren.line,
+                        call_expr.closing_paren.line,
                     ));
                 }
 

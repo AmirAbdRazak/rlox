@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    syntax::{BinaryExpr, CallExpr, Expr, Grouping, LogicalExpr, Stmt, UnaryExpr},
+    syntax::{Expr, Stmt},
     visit::Visitor,
 };
 
@@ -15,28 +15,24 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
 
     fn visit_expression(&self, expr: &Expr) -> String {
         match expr {
-            Expr::Binary(BinaryExpr {
-                left: left_expr,
-                right: right_expr,
-                operator,
-            }) => format!(
+            Expr::Binary(binary_expr) => format!(
                 "(Binary {} {} {})",
-                operator.token_type,
-                self.visit_expression(left_expr),
-                self.visit_expression(right_expr)
+                binary_expr.operator.token_type,
+                self.visit_expression(&binary_expr.left),
+                self.visit_expression(&binary_expr.right)
             ),
-            Expr::Unary(UnaryExpr {
-                operator,
-                right: right_expr,
-            }) => format!(
+            Expr::Unary(unary_expr) => format!(
                 "(Unary {} {})",
-                operator.token_type,
-                self.visit_expression(right_expr)
+                unary_expr.operator.token_type,
+                self.visit_expression(&unary_expr.right)
             ),
-            Expr::Grouping(Grouping { expression: expr }) => {
-                format!("(group {})", self.visit_expression(expr))
+            Expr::Grouping(grouping_expr) => {
+                format!(
+                    "(group {})",
+                    self.visit_expression(&grouping_expr.expression)
+                )
             }
-            Expr::Literal(literal_value) => format!("(Literal {})", literal_value),
+            Expr::Literal(literal_expr) => format!("(Literal {})", literal_expr.literal),
             Expr::Variable(variable) => format!("(Variable {})", variable.name),
             Expr::Assignment(assignment) => {
                 format!(
@@ -44,24 +40,20 @@ impl<'a> Visitor for ASTStringVisitor<'a> {
                     assignment.name, assignment.expression
                 )
             }
-            Expr::Logical(LogicalExpr {
-                left: left_expr,
-                right: right_expr,
-                operator,
-            }) => format!(
+            Expr::Logical(logical_expr) => format!(
                 "(Logical {} {} {})",
-                operator.token_type,
-                self.visit_expression(left_expr),
-                self.visit_expression(right_expr)
+                logical_expr.operator.token_type,
+                self.visit_expression(&logical_expr.left),
+                self.visit_expression(&logical_expr.right)
             ),
-            Expr::Call(CallExpr {
-                ref callee,
-                ref arguments,
-                ..
-            }) => format!(
+            Expr::Call(call_expr) => format!(
                 "(Callable <callee {}> <arguments {}>)",
-                callee.to_string(),
-                arguments.iter().map(|t| t.to_string()).collect::<String>()
+                call_expr.callee,
+                call_expr
+                    .arguments
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<String>()
             ),
             Expr::Lambda(lambda) => {
                 format!(

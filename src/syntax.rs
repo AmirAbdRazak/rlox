@@ -4,16 +4,19 @@ use crate::{ast_printer::ASTStringVisitor, token::Token};
 
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct BinaryExpr {
+    pub id: usize,
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
 }
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct Grouping {
+    pub id: usize,
     pub expression: Box<Expr>,
 }
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct UnaryExpr {
+    pub id: usize,
     pub operator: Token,
     pub right: Box<Expr>,
 }
@@ -25,18 +28,27 @@ pub enum LiteralValue {
     Bool(bool),
     None,
 }
+
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
+pub struct LiteralExpr {
+    pub id: usize,
+    pub literal: LiteralValue,
+}
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct VariableExpr {
+    pub id: usize,
     pub name: Token,
 }
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct AssignmentExpr {
+    pub id: usize,
     pub name: Token,
     pub expression: Box<Expr>,
 }
 
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct LogicalExpr {
+    pub id: usize,
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
@@ -44,6 +56,7 @@ pub struct LogicalExpr {
 
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct CallExpr {
+    pub id: usize,
     pub callee: Box<Expr>,
     pub closing_paren: Token,
     pub arguments: Vec<Box<Expr>>,
@@ -51,6 +64,7 @@ pub struct CallExpr {
 
 #[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct LambdaExpr {
+    pub id: usize,
     pub parameters: Vec<Token>,
     pub body: Vec<Stmt>,
 }
@@ -109,7 +123,7 @@ impl From<bool> for LiteralValue {
 pub enum Expr {
     Binary(BinaryExpr),
     Grouping(Grouping),
-    Literal(LiteralValue),
+    Literal(LiteralExpr),
     Unary(UnaryExpr),
     Variable(VariableExpr),
     Assignment(AssignmentExpr),
@@ -128,6 +142,22 @@ pub enum Stmt {
     While(Expr, Box<Stmt>),
     Function(Token, Rc<LambdaExpr>),
     Return(Token, Option<Expr>),
+}
+
+impl Expr {
+    pub fn get_id(&self) -> usize {
+        match self {
+            Expr::Assignment(assignment_expr) => assignment_expr.id,
+            Expr::Binary(binary_expr) => binary_expr.id,
+            Expr::Call(call_expr) => call_expr.id,
+            Expr::Grouping(grouping_expr) => grouping_expr.id,
+            Expr::Lambda(lambda_expr) => lambda_expr.id,
+            Expr::Literal(literal_expr) => literal_expr.id,
+            Expr::Logical(logical_expr) => logical_expr.id,
+            Expr::Unary(unary_expr) => unary_expr.id,
+            Expr::Variable(variable_expr) => variable_expr.id,
+        }
+    }
 }
 
 impl fmt::Display for Expr {
