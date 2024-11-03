@@ -128,10 +128,21 @@ impl Environment {
 
     pub fn ancestor(&self, distance: usize) -> Option<Rc<Environment>> {
         let mut env = self.enclosing.as_ref().unwrap().clone();
-
-        for _ in 1..distance {
+        println!(
+            "Parent 1 {} @ distance 0",
+            hashmap_to_string(&env.values.borrow())
+        );
+        for i in 1..distance {
+            println!(
+                "Parent 1 {} @ distance {i}",
+                hashmap_to_string(&env.values.borrow())
+            );
             env = env.enclosing.as_ref()?.clone();
         }
+        println!(
+            "Search ENV {} @ distance {distance}",
+            hashmap_to_string(&env.values.borrow())
+        );
 
         Some(env)
     }
@@ -221,7 +232,9 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
-        self.locals.insert(expr.clone(), depth);
+        println!("=== Resolving Local for expr {} @ depth {}", expr, depth);
+        self.locals.insert(expr, depth);
+        println!("=== Now Locals is {}", hashmap_to_string(&self.locals));
     }
 
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {

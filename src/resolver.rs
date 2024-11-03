@@ -84,8 +84,14 @@ impl<'main> Resolver<'main> {
     }
 
     fn resolve_local(&mut self, expr: &Expr, name: &str) {
+        println!("=== START Resolving Local {expr} for name {name}===");
         for (depth, scope) in self.scopes.iter().rev().enumerate() {
             if scope.contains_key(name) {
+                println!(
+                    "=== FOUND {name} @ depth {depth} for scope {}===",
+                    hashmap_to_string(scope)
+                );
+                println!("=== FINISH Resolving Local {expr} for name {name}===");
                 self.interpreter.resolve(expr, depth);
                 return;
             }
@@ -115,13 +121,17 @@ impl<'main> Resolver<'main> {
     }
 
     fn begin_scope(&mut self) {
+        println!("===begin scope===");
         self.scopes.push(HashMap::new());
     }
     fn end_scope(&mut self) {
+        println!("===end scope===");
         self.scopes.pop();
     }
 
     fn declare(&mut self, name_token: &Token) -> ResolverResult<()> {
+        let len = self.scopes.len();
+        println!("===START declare name_token {name_token} @ dist {}===", len);
         let current_scope = match self.scopes.last_mut() {
             Some(scope) => scope,
             None => return Ok(()),
@@ -137,11 +147,16 @@ impl<'main> Resolver<'main> {
             current_scope.insert(name.clone(), false);
         };
 
+        println!(
+            "===FINISH declare name_token {name_token} @ dist {}===",
+            len
+        );
         Ok(())
     }
 
     fn define(&mut self, name_token: &Token) -> ResolverResult<()> {
         let len = self.scopes.len();
+        println!("===START define name_token {name_token} @ dist {}===", len);
         let current_scope = match self.scopes.last_mut() {
             Some(scope) => scope,
             None => return Ok(()),
@@ -152,6 +167,7 @@ impl<'main> Resolver<'main> {
             current_scope.insert(name.clone(), true);
         };
 
+        println!("===FINISH define name_token {name_token} @ dist {}===", len);
         Ok(())
     }
 }

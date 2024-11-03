@@ -372,10 +372,7 @@ impl Parser {
         };
 
         let condition = match self.tokens.peek() {
-            Some(token) if token.token_type == TT::Semicolon => {
-                self.tokens.next();
-                None
-            }
+            Some(token) if token.token_type == TT::Semicolon => None,
             _ => Some(self.expression()?),
         };
 
