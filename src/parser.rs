@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::fmt;
 use std::iter::Peekable;
 use std::rc::Rc;
@@ -123,7 +122,6 @@ pub struct Parser {
     tokens: TokenPeekable,
     prev_token_line: usize,
     mode: ParserMode,
-    id: Cell<usize>,
 }
 
 impl Parser {
@@ -133,13 +131,7 @@ impl Parser {
             tokens: iter_tokens.peekable(),
             prev_token_line: 0,
             mode,
-            id: Cell::new(0),
         }
-    }
-    fn new_id(&self) -> usize {
-        let new_id = self.id.get();
-        self.id.set(new_id + 1);
-        new_id
     }
 
     pub fn parse(&mut self) -> (Vec<Stmt>, Vec<ParserError>) {
@@ -371,13 +363,19 @@ impl Parser {
         };
 
         let initializer = match self.tokens.peek() {
-            Some(token) if token.token_type == TT::Semicolon => None,
+            Some(token) if token.token_type == TT::Semicolon => {
+                self.tokens.next();
+                None
+            }
             Some(token) if token.token_type == TT::Var => Some(self.var_declaration()?),
             _ => Some(self.expr_statement()?),
         };
 
         let condition = match self.tokens.peek() {
-            Some(token) if token.token_type == TT::Semicolon => None,
+            Some(token) if token.token_type == TT::Semicolon => {
+                self.tokens.next();
+                None
+            }
             _ => Some(self.expression()?),
         };
 
@@ -401,7 +399,7 @@ impl Parser {
             Some(token) if token.token_type == TT::RightParen => self.tokens.next(),
             _ => {
                 return Err(ParserError::ExpectedXAfterY(
-                    TT::Semicolon,
+                    TT::RightParen,
                     "For loop increment".to_string(),
                     for_token.line,
                 ))
@@ -595,9 +593,8 @@ impl Parser {
             let right = self.assignment()?;
 
             match expr {
-                Expr::Variable(VariableExpr { id: _id, ref name }) => {
+                Expr::Variable(VariableExpr { ref name }) => {
                     return Ok(Expr::Assignment(AssignmentExpr {
-                        id: self.new_id(),
                         name: name.clone(),
                         expression: Box::new(right),
                     }));
@@ -817,9 +814,7 @@ impl Parser {
                 TT::Pipe => self.lambda(),
                 TT::Identifier(_) => {
                     let identifier_token = self.tokens.next().unwrap();
-                    let new_id = self.new_id();
                     Ok(Expr::Variable(VariableExpr {
-                        id: new_id,
                         name: identifier_token,
                     }))
                 }

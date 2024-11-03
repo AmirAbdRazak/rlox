@@ -5,14 +5,17 @@ use std::process::exit;
 
 use interpreter::Interpreter;
 use parser::ParserMode;
+use resolver::Resolver;
 use token::Token;
 
 mod ast_printer;
 mod interpreter;
 mod parser;
+mod resolver;
 mod scanner;
 mod syntax;
 mod token;
+mod utils;
 mod visit;
 
 fn main() {
@@ -149,8 +152,6 @@ impl Lox {
         let (tokens, scanner_errors) = scanner.scan_tokens();
         let mut parser = parser::Parser::new(tokens, ParserMode::Statement);
         let (statements, parser_errors) = parser.parse();
-        let mut interpreter = Interpreter::new();
-        let (_evals, runtime_errors) = interpreter.interpret(&statements);
 
         scanner_errors
             .iter()
@@ -163,16 +164,30 @@ impl Lox {
             exit(65);
         }
 
+        let mut interpreter = Interpreter::new();
+        let mut resolver = Resolver::new(&mut interpreter);
+        let resolver_errors = resolver.resolve(&statements);
+
+        resolver_errors
+            .iter()
+            .for_each(|err| self.report(err.line(), format!("Resolver Error: {}", err)));
+
+        if self.had_error {
+            exit(70);
+        }
+
+        let (_evals, runtime_errors) = interpreter.interpret(&statements);
+
         runtime_errors
             .iter()
-            .for_each(|err| self.report(err.line(), format!("{}", err)));
+            .for_each(|err| self.report(err.line(), format!("Interpreter Error: {}", err)));
 
         if self.had_error {
             exit(70);
         }
     }
     pub fn report(&mut self, line: usize, message: String) {
-        eprintln!("[line {}] Error: {}", line, message);
+        eprintln!("[line {}] {}", line, message);
         self.had_error = true;
     }
 }

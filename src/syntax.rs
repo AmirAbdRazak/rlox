@@ -2,56 +2,54 @@ use std::{fmt, rc::Rc};
 
 use crate::{ast_printer::ASTStringVisitor, token::Token};
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct BinaryExpr {
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct Grouping {
     pub expression: Box<Expr>,
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct UnaryExpr {
     pub operator: Token,
     pub right: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub enum LiteralValue {
     Float(String),
     LoxString(String),
     Bool(bool),
     None,
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct VariableExpr {
-    pub id: usize,
     pub name: Token,
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct AssignmentExpr {
-    pub id: usize,
     pub name: Token,
     pub expression: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct LogicalExpr {
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
     pub closing_paren: Token,
     pub arguments: Vec<Box<Expr>>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub struct LambdaExpr {
     pub parameters: Vec<Token>,
     pub body: Vec<Stmt>,
@@ -107,7 +105,7 @@ impl From<bool> for LiteralValue {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub enum Expr {
     Binary(BinaryExpr),
     Grouping(Grouping),
@@ -120,7 +118,7 @@ pub enum Expr {
     Lambda(Rc<LambdaExpr>),
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash, Eq)]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),

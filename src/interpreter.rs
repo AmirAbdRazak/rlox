@@ -3,6 +3,7 @@ use crate::syntax::{
     Stmt, UnaryExpr, VariableExpr,
 };
 use crate::token::{Token, TokenType as TT};
+use crate::utils::hashmap_to_string;
 use crate::visit::MutVisitor;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
@@ -21,6 +22,7 @@ pub enum RuntimeError {
     InvalidAssignment(TT, usize),
     ExpectedXFoundY(String, String, usize),
     NonFunctionReturn(usize),
+    UndefinedAncestor(usize, usize),
 }
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -64,6 +66,12 @@ impl fmt::Display for RuntimeError {
                     "Returns should only be in function scopes, found at line {line}"
                 )?;
             }
+            RuntimeError::UndefinedAncestor(depth, line) => {
+                write!(
+                    f,
+                    "Undefined ancestor environment at depth {depth} at line {line}"
+                )?;
+            }
         }
         Ok(())
     }
@@ -79,6 +87,7 @@ impl RuntimeError {
             RuntimeError::InvalidAssignment(_, line) => line,
             RuntimeError::ExpectedXFoundY(_, _, line) => line,
             RuntimeError::NonFunctionReturn(line) => line,
+            RuntimeError::UndefinedAncestor(_, line) => line,
         }
     }
 }
@@ -117,51 +126,102 @@ impl Environment {
         }
     }
 
+    pub fn ancestor(&self, distance: usize) -> Option<Rc<Environment>> {
+        let mut env = self.enclosing.as_ref().unwrap().clone();
+
+        for _ in 1..distance {
+            env = env.enclosing.as_ref()?.clone();
+        }
+
+        Some(env)
+    }
+
     pub fn define(&self, token_type: &TT, value: Types) {
         self.values.borrow_mut().insert(token_type.clone(), value);
     }
 
-    pub fn get(&self, token_type: &TT, token_line: usize) -> RuntimeResult<Types> {
-        if let Some(value) = self.values.borrow().get(token_type) {
+    pub fn get(&self, token: &Token) -> RuntimeResult<Types> {
+        if let Some(value) = self.values.borrow().get(&token.token_type) {
             Ok(value.clone())
         } else if let Some(ref enclosing) = self.enclosing {
-            enclosing.get(token_type, token_line)
+            enclosing.get(token)
         } else {
+            println!("this is the last thing it hits");
             Err(RuntimeError::UndefinedVariable(
-                token_type.clone(),
-                token_line,
+                token.token_type.clone(),
+                token.line,
+            ))
+        }
+    }
+    pub fn get_at(&self, distance: usize, name_token: &Token) -> RuntimeResult<Types> {
+        println!("token {name_token} @ distance {distance}");
+        if distance == 0 {
+            return self.get(&name_token);
+        }
+
+        if let Some(ancestor_env) = self.ancestor(distance) {
+            return ancestor_env.get(name_token);
+        }
+
+        Err(RuntimeError::UndefinedAncestor(distance, name_token.line))
+    }
+
+    pub fn assign(&self, token: &Token, value: Types) -> RuntimeResult<Types> {
+        if self.values.borrow().contains_key(&token.token_type) {
+            self.values
+                .borrow_mut()
+                .insert(token.token_type.clone(), value.clone());
+            Ok(value)
+        } else if let Some(ref enclosing) = self.enclosing {
+            enclosing.assign(token, value)
+        } else {
+            Err(RuntimeError::InvalidAssignment(
+                token.token_type.clone(),
+                token.line,
             ))
         }
     }
 
-    pub fn assign(&self, token_type: &TT, value: Types, token_line: usize) -> RuntimeResult<Types> {
-        if self.values.borrow().contains_key(token_type) {
-            self.values
-                .borrow_mut()
-                .insert(token_type.clone(), value.clone());
-            Ok(value)
-        } else if let Some(ref enclosing) = self.enclosing {
-            enclosing.assign(token_type, value, token_line)
-        } else {
-            Err(RuntimeError::InvalidAssignment(
-                token_type.clone(),
-                token_line,
-            ))
+    pub fn assign_at(
+        &self,
+        distance: usize,
+        name_token: &Token,
+        value: Types,
+    ) -> RuntimeResult<Types> {
+        if distance == 0 {
+            return self.assign(&name_token, value);
         }
+
+        if let Some(ancestor_env) = self.ancestor(distance) {
+            println!("assigning name_token {name_token} @ distance {distance}");
+            return ancestor_env.assign(name_token, value);
+        }
+
+        Err(RuntimeError::UndefinedAncestor(distance, name_token.line))
     }
 }
 
 pub struct Interpreter {
-    pub globals: Rc<Environment>,
+    pub global_env: Rc<Environment>,
+    pub working_env: Rc<Environment>,
     had_runtime_error: bool,
+    pub locals: HashMap<Expr, usize>,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
+        let global_env = Rc::new(Environment::global());
+
         Interpreter {
-            globals: Rc::new(Environment::global()),
+            working_env: global_env.clone(),
+            global_env,
             had_runtime_error: false,
+            locals: HashMap::new(),
         }
+    }
+
+    pub fn resolve(&mut self, expr: &Expr, depth: usize) {
+        self.locals.insert(expr.clone(), depth);
     }
 
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
@@ -187,17 +247,17 @@ impl Interpreter {
         statements: &[Stmt],
         environment: Environment,
     ) -> Result<Types, RuntimeReturn> {
-        let previous = mem::replace(&mut self.globals, Rc::new(environment));
+        let previous = mem::replace(&mut self.working_env, Rc::new(environment));
         for statement in statements {
             if let Err(err) = self.visit_statement(statement) {
                 if let RuntimeReturn::Return(_, _) = err {
-                    self.globals = previous;
+                    self.working_env = previous;
                 };
 
                 return Err(err);
             }
         }
-        self.globals = previous;
+        self.working_env = previous;
 
         Ok(Types::Nil)
     }
@@ -322,16 +382,29 @@ impl MutVisitor for Interpreter {
                 Ok(ret_val)
             }
             Expr::Grouping(Grouping { expression }) => self.visit_expression(expression),
-            Expr::Variable(VariableExpr { id: _, ref name }) => {
-                self.globals.get(&name.token_type, name.line)
-            }
+            Expr::Variable(VariableExpr { ref name }) => match self.locals.get(expr) {
+                Some(distance) => {
+                    println!(
+                        "Working env {} @ distance {distance}",
+                        hashmap_to_string(&self.working_env.values.borrow())
+                    );
+                    println!(
+                        "Global env {} @ distance {distance}",
+                        hashmap_to_string(&self.global_env.values.borrow())
+                    );
+                    self.working_env.get_at(*distance, name)
+                }
+                None => self.global_env.get(name),
+            },
             Expr::Assignment(AssignmentExpr {
-                id: _,
                 ref name,
                 ref expression,
             }) => {
                 let value = self.visit_expression(expression)?;
-                self.globals.assign(&name.token_type, value, name.line)
+                match self.locals.get(expr) {
+                    Some(distance) => self.working_env.assign_at(*distance, name, value),
+                    None => self.global_env.assign(name, value),
+                }
             }
             Expr::Logical(LogicalExpr {
                 ref left,
@@ -391,7 +464,7 @@ impl MutVisitor for Interpreter {
                 let lambda = Function {
                     name: None,
                     lambda: lambda.clone(),
-                    closure: self.globals.clone(),
+                    closure: self.working_env.clone(),
                 };
 
                 Ok(Types::Callable(Rc::new(Box::new(lambda))))
@@ -423,10 +496,15 @@ impl MutVisitor for Interpreter {
                     .map_err(|err| RuntimeReturn::Err(err))?
                     .unwrap_or(Types::Nil);
 
-                self.globals.borrow_mut().define(&token.token_type, value)
+                self.working_env
+                    .borrow_mut()
+                    .define(&token.token_type, value)
             }
             Stmt::Block(ref statements) => {
-                self.execute_block(statements, Environment::inherit_new(self.globals.clone()))?;
+                self.execute_block(
+                    statements,
+                    Environment::inherit_new(self.working_env.clone()),
+                )?;
             }
             Stmt::While(ref condition, ref body) => {
                 while is_truthy(
@@ -452,10 +530,10 @@ impl MutVisitor for Interpreter {
                 let callable_fn = Function {
                     name: Some(name_token.token_type.clone()),
                     lambda: lambda.clone(),
-                    closure: self.globals.clone(),
+                    closure: self.working_env.clone(),
                 };
 
-                self.globals.define(
+                self.working_env.define(
                     &name_token.token_type,
                     Types::Callable(Rc::new(Box::new(callable_fn))),
                 );
