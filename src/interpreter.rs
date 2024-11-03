@@ -217,7 +217,7 @@ impl Interpreter {
     }
 
     pub fn resolve(&mut self, expr: &Expr, depth: usize) {
-        self.locals.insert(expr, depth);
+        self.locals.entry(expr.clone()).or_insert(depth);
     }
 
     pub fn interpret(&mut self, program: &[Stmt]) -> (Vec<Types>, Vec<RuntimeError>) {
